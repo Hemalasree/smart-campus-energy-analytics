@@ -435,3 +435,85 @@ async function runSimulation() {
         console.error('Simulation error:', err);
     }
 }
+
+// --- Universal CSV Upload & Processing Engine ---
+function onCsvFileSelected(input) {
+    const badge = document.getElementById('fileSelectedBadge');
+    const nameSpan = document.getElementById('selectedFileName');
+    if (input.files && input.files[0]) {
+        nameSpan.innerText = `${input.files[0].name} (${(input.files[0].size / 1024).toFixed(1)} KB)`;
+        badge.style.display = 'block';
+    } else {
+        badge.style.display = 'none';
+    }
+}
+
+async function uploadAndProcessCsv() {
+    const fileInput = document.getElementById('csvFileInput');
+    const btn = document.getElementById('btnProcessDataset');
+
+    if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
+        alert('Please select a CSV file first before clicking Process Dataset.');
+        return;
+    }
+
+    const file = fileInput.files[0];
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const origBtnHtml = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Processing & Training...';
+
+    try {
+        const res = await fetch('/api/upload-csv', {
+            method: 'POST',
+            body: formData
+        });
+
+        const data = await res.json();
+
+        if (data.success) {
+            // Populate summary metrics
+            document.getElementById('uploadSuccessMessage').innerText = data.message;
+            document.getElementById('upload-res-records').innerText = data.summary.records_processed.toLocaleString();
+            document.getElementById('upload-res-kwh').innerText = `${data.summary.total_kwh.toLocaleString()} kWh`;
+            document.getElementById('upload-res-cost').innerText = `Est. ₹${data.summary.cost_inr.toLocaleString()} | ${data.summary.co2_kg.toLocaleString()} kg CO₂`;
+            document.getElementById('upload-res-range').innerText = data.summary.date_range;
+            document.getElementById('upload-res-r2').innerText = `R² ${data.summary.retrained_r2}`;
+
+            // Populate preview table
+            const tbody = document.getElementById('csvPreviewTableBody');
+            if (tbody && data.preview) {
+                tbody.innerHTML = data.preview.map(row => `
+                    <tr>
+                        <td><strong>${row.building}</strong></td>
+                        <td>${row.timestamp}</td>
+                        <td><span style="color: var(--primary); font-weight: 600;">${row.consumption_kwh.toLocaleString()} kWh</span></td>
+                        <td>${row.peak_demand_kw} kW</td>
+                        <td>${row.temperature_c}°C</td>
+                        <td>₹${row.cost_inr.toLocaleString()}</td>
+                    </tr>
+                `).join('');
+            }
+
+            // Show results container
+            const resContainer = document.getElementById('uploadResultsContainer');
+            if (resContainer) {
+                resContainer.style.display = 'block';
+                resContainer.scrollIntoView({ behavior: 'smooth' });
+            }
+
+            // Refresh global dashboard data in background
+            fetchDashboardData();
+        } else {
+            alert('Failed to process dataset: ' + (data.error || 'Unknown error'));
+        }
+    } catch (err) {
+        console.error('CSV upload failed:', err);
+        alert('Network error while uploading dataset: ' + err.message);
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = origBtnHtml;
+    }
+}

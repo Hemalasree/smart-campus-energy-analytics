@@ -462,22 +462,82 @@
                     <div class="panel-card">
                         <div class="card-header">
                             <h2><i class="fa-solid fa-cloud-arrow-up"></i> Upload Smart Meter CSV Readings</h2>
-                            <span class="badge ai-badge">Admin Access Required</span>
+                            <span class="badge ai-badge">Universal CSV Ingestion</span>
                         </div>
-                        {% if user and user.role == 'Admin' %}
-                        <div class="upload-dropzone">
-                            <i class="fa-solid fa-file-csv" style="font-size: 40px; color: var(--primary);"></i>
-                            <p>Drag and drop smart meter CSV data files here, or click to browse</p>
-                            <input type="file" accept=".csv" class="form-control" style="max-width: 300px; margin-top: 10px;">
-                            <button class="btn-primary" style="max-width: 200px; margin-top: 14px;"><i class="fa-solid fa-upload"></i> Process Dataset</button>
+                        
+                        <div class="upload-dropzone" id="dropzoneBox" style="text-align: center; padding: 36px 20px; border: 2px dashed var(--card-border); border-radius: 16px; background: rgba(255,255,255,0.02);">
+                            <i class="fa-solid fa-file-csv" style="font-size: 46px; color: var(--primary);"></i>
+                            <h3 style="margin-top: 12px;">Select or Drop any Energy Readings CSV</h3>
+                            <p style="color: var(--text-muted); font-size: 13px; max-width: 540px; margin: 8px auto;">
+                                Supports standard CSV files with columns like <code>consumption_kwh</code>, <code>timestamp</code>, <code>building</code>, <code>temperature</code>. Any missing columns are intelligently synthesized!
+                            </p>
+                            
+                            <div style="display: flex; gap: 12px; align-items: center; justify-content: center; margin-top: 16px; flex-wrap: wrap;">
+                                <input type="file" id="csvFileInput" accept=".csv" class="form-control" style="max-width: 320px;" onchange="onCsvFileSelected(this)">
+                                <button type="button" class="btn-primary" id="btnProcessDataset" onclick="uploadAndProcessCsv()" style="max-width: 200px;">
+                                    <i class="fa-solid fa-microchip"></i> Process Dataset
+                                </button>
+                            </div>
+                            
+                            <div id="fileSelectedBadge" style="display: none; margin-top: 12px; font-size: 13px; color: var(--primary); font-weight: 500;">
+                                <i class="fa-solid fa-check-circle"></i> Selected file: <span id="selectedFileName">--</span>
+                            </div>
                         </div>
-                        {% else %}
-                        <div class="access-denied-box">
-                            <i class="fa-solid fa-lock" style="font-size: 32px; color: var(--danger);"></i>
-                            <h3>Access Restricted</h3>
-                            <p>Data upload capabilities are restricted to users with the <strong>Admin</strong> role.</p>
+
+                        <!-- Processing Results Container -->
+                        <div id="uploadResultsContainer" style="display: none; margin-top: 24px;">
+                            <div id="uploadSuccessBanner" style="background: rgba(16, 185, 129, 0.15); border: 1px solid var(--success); padding: 14px 18px; border-radius: 12px; color: var(--success); display: flex; align-items: center; gap: 10px; margin-bottom: 20px;">
+                                <i class="fa-solid fa-circle-check" style="font-size: 20px;"></i>
+                                <span id="uploadSuccessMessage" style="font-weight: 600;">Dataset processed successfully!</span>
+                            </div>
+
+                            <div class="kpi-grid" style="margin-bottom: 24px;">
+                                <div class="kpi-card">
+                                    <span class="label">Records Processed</span>
+                                    <h3 class="value" id="upload-res-records">0</h3>
+                                    <span class="subtext">Ingested to Database</span>
+                                </div>
+                                <div class="kpi-card">
+                                    <span class="label">Total Energy Ingested</span>
+                                    <h3 class="value" id="upload-res-kwh">0 kWh</h3>
+                                    <span class="subtext" id="upload-res-cost">₹0</span>
+                                </div>
+                                <div class="kpi-card">
+                                    <span class="label">Detected Date Range</span>
+                                    <h3 class="value" id="upload-res-range" style="font-size: 15px; margin-top: 6px;">--</h3>
+                                    <span class="subtext">Time Series Span</span>
+                                </div>
+                                <div class="kpi-card">
+                                    <span class="label">Retrained Model Accuracy</span>
+                                    <h3 class="value" id="upload-res-r2" style="color: var(--purple);">R² 0.95</h3>
+                                    <span class="subtext">Scikit-Learn Random Forest</span>
+                                </div>
+                            </div>
+
+                            <div class="card-header" style="margin-top: 20px; border-top: 1px solid var(--card-border); padding-top: 16px;">
+                                <h3><i class="fa-solid fa-table"></i> Processed Readings Preview (First 5 Rows)</h3>
+                                <button type="button" class="btn-primary" style="max-width: 220px;" onclick="switchView('dashboard'); fetchDashboardData();">
+                                    <i class="fa-solid fa-chart-line"></i> View on Dashboard
+                                </button>
+                            </div>
+
+                            <div style="overflow-x: auto; margin-top: 12px;">
+                                <table class="user-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Building</th>
+                                            <th>Timestamp</th>
+                                            <th>Consumption (kWh)</th>
+                                            <th>Peak Demand (kW)</th>
+                                            <th>Ambient Temp (°C)</th>
+                                            <th>Est. Cost (₹)</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="csvPreviewTableBody">
+                                    </tbody>
+                                </table>
+                            </div>
                         </div>
-                        {% endif %}
                     </div>
                 </div>
 
