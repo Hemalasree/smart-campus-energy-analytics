@@ -212,6 +212,16 @@ function renderBuildingChart(buildingData) {
 
     if (buildingChart) buildingChart.destroy();
 
+    const selectedId = buildingData.selected_building_id || 0;
+    const bgColors = buildingData.building_ids ? buildingData.building_ids.map(id => {
+        if (selectedId === 0) return '#38BDF8';
+        return id === selectedId ? '#38BDF8' : 'rgba(56, 189, 248, 0.25)';
+    }) : '#38BDF8';
+
+    const borderColors = buildingData.building_ids ? buildingData.building_ids.map(id => {
+        return id === selectedId ? '#0284C7' : 'transparent';
+    }) : 'transparent';
+
     buildingChart = new Chart(ctx, {
         type: 'bar',
         data: {
@@ -219,7 +229,9 @@ function renderBuildingChart(buildingData) {
             datasets: [{
                 label: 'Consumption (kWh)',
                 data: buildingData.data,
-                backgroundColor: '#38BDF8',
+                backgroundColor: bgColors,
+                borderColor: borderColors,
+                borderWidth: selectedId > 0 ? 1.5 : 0,
                 borderRadius: 6
             }]
         },
@@ -386,6 +398,13 @@ function renderAnalyticsBuildingChart(buildingData) {
 
     if (analyticsBuildingChart) analyticsBuildingChart.destroy();
 
+    const defaultColors = ['#38BDF8', '#8B5CF6', '#10B981', '#F59E0B', '#EC4899', '#6366F1'];
+    const selectedId = buildingData.selected_building_id || 0;
+    const bgColors = buildingData.building_ids ? buildingData.building_ids.map((id, idx) => {
+        if (selectedId === 0) return defaultColors[idx % defaultColors.length];
+        return id === selectedId ? defaultColors[idx % defaultColors.length] : 'rgba(148, 163, 184, 0.22)';
+    }) : defaultColors;
+
     analyticsBuildingChart = new Chart(ctx, {
         type: 'bar',
         data: {
@@ -393,9 +412,7 @@ function renderAnalyticsBuildingChart(buildingData) {
             datasets: [{
                 label: 'Building Energy Usage (kWh)',
                 data: buildingData.data,
-                backgroundColor: [
-                    '#38BDF8', '#8B5CF6', '#10B981', '#F59E0B', '#EC4899', '#6366F1'
-                ],
+                backgroundColor: bgColors,
                 borderRadius: 8
             }]
         },
@@ -509,11 +526,20 @@ function renderBuildingStarRatings(euiRatings, campusAvgEui, topFacility) {
 
     grid.innerHTML = euiRatings.map(b => {
         const meterPct = Math.min(100, Math.max(15, (b.eui / 6.0) * 100));
+        const isSelected = b.is_selected;
+        const cardStyle = isSelected
+            ? `background: var(--card-bg); border: 2px solid #38BDF8; border-top: 4px solid ${b.badge_color}; border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 12px; box-shadow: 0 0 20px rgba(56, 189, 248, 0.35); transform: translateY(-2px); transition: all 0.25s ease;`
+            : `background: var(--card-bg); border: 1px solid var(--card-border); border-top: 3px solid ${b.badge_color}; border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.06); transition: all 0.25s ease;`;
+
+        const activeTag = isSelected
+            ? `<span style="background: #38BDF8; color: #0F172A; font-weight: 700; font-size: 10px; padding: 2px 7px; border-radius: 5px; margin-left: 6px; letter-spacing: 0.5px;"><i class="fa-solid fa-crosshairs"></i> SELECTED</span>`
+            : '';
+
         return `
-            <div class="eui-building-card" style="background: var(--card-bg); border: 1px solid var(--card-border); border-top: 3px solid ${b.badge_color}; border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.06);">
+            <div class="eui-building-card" style="${cardStyle}">
                 <div style="display: flex; justify-content: space-between; align-items: flex-start;">
                     <div>
-                        <h4 style="font-size: 15px; font-weight: 700; margin-bottom: 2px;">${b.building_name}</h4>
+                        <h4 style="font-size: 15px; font-weight: 700; margin-bottom: 2px; display: flex; align-items: center;">${b.building_name} ${activeTag}</h4>
                         <span style="font-size: 11px; color: var(--text-muted);">${b.building_type} · ${b.area_sqft.toLocaleString()} sq.ft</span>
                     </div>
                     <span class="role-badge" style="background: ${b.badge_color}22; color: ${b.badge_color}; border: 1px solid ${b.badge_color}44; font-weight: 700; font-size: 12px; padding: 3px 8px;">

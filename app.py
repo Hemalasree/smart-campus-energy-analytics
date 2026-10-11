@@ -233,12 +233,12 @@ def init_db():
     cursor.execute("SELECT COUNT(*) FROM buildings")
     if cursor.fetchone()[0] == 0:
         buildings_data = [
-            ('Academic Block A', 'ACA-A', 'Academic', 45000, 120.0),
-            ('Academic Block B', 'ACA-B', 'Academic', 38000, 95.0),
-            ('Central Library', 'LIB-01', 'Facility', 25000, 70.0),
-            ('Main Hostel Complex', 'HST-ALL', 'Residential', 60000, 160.0),
-            ('Research & Innovation Lab', 'LAB-RND', 'Laboratory', 30000, 140.0),
-            ('Admin & IT Center', 'ADM-01', 'Administrative', 20000, 50.0)
+            ('Academic Block A', 'ACA-A', 'Academic', 45000, 200.0),
+            ('Academic Block B', 'ACA-B', 'Academic', 38000, 135.0),
+            ('Central Library', 'LIB-01', 'Facility', 25000, 90.0),
+            ('Main Hostel Complex', 'HST-ALL', 'Residential', 60000, 280.0),
+            ('Research & Innovation Lab', 'LAB-RND', 'Laboratory', 30000, 170.0),
+            ('Admin & IT Center', 'ADM-01', 'Administrative', 20000, 45.0)
         ]
         ph = "(?,?,?,?,?)" if db_type == "sqlite" else "(%s,%s,%s,%s,%s)"
         cursor.executemany(f"INSERT INTO buildings (building_name, building_code, building_type, area_sqft, base_benchmark_kwh) VALUES {ph}", buildings_data)
@@ -284,22 +284,22 @@ def init_db():
     conn.close()
 
 def generate_sample_energy_data(conn, db_type):
-    """Generates synthetic hourly campus dataset with ambient weather & diurnal usage patterns."""
+    """Generates synthetic 30-day hourly campus dataset with ambient weather & diurnal usage patterns."""
     cursor = conn.cursor()
     cursor.execute("DELETE FROM energy_readings")
     
     np.random.seed(42)
-    end_date = datetime.datetime.now()
-    start_date = end_date - datetime.timedelta(days=14)
+    end_date = datetime.datetime.now().replace(minute=0, second=0, microsecond=0)
+    start_date = end_date - datetime.timedelta(days=30)
     timestamps = pd.date_range(start=start_date, end=end_date, freq='h')
 
     buildings = [
-        {"id": 1, "base": 120.0},
-        {"id": 2, "base": 95.0},
-        {"id": 3, "base": 70.0},
-        {"id": 4, "base": 160.0},
-        {"id": 5, "base": 140.0},
-        {"id": 6, "base": 50.0}
+        {"id": 1, "base": 205.0}, # Academic Block A: 45,000 sqft -> EUI ~3.7 (Class C, 3 Stars)
+        {"id": 2, "base": 140.0}, # Academic Block B: 38,000 sqft -> EUI ~3.0 (Class B, 4 Stars)
+        {"id": 3, "base": 95.0},  # Central Library: 25,000 sqft -> EUI ~3.1 (Class B, 4 Stars)
+        {"id": 4, "base": 290.0}, # Main Hostel Complex: 60,000 sqft -> EUI ~4.1 (Class D, 2 Stars)
+        {"id": 5, "base": 175.0}, # Research & Innovation Lab: 30,000 sqft -> EUI ~5.4 (Class E, 1 Star)
+        {"id": 6, "base": 48.0}   # Admin & IT Center: 20,000 sqft -> EUI ~1.9 (Class A, 5 Stars)
     ]
 
     readings = []
@@ -316,16 +316,25 @@ def generate_sample_energy_data(conn, db_type):
         for b in buildings:
             if b["id"] == 4:
                 occ_base = 80 if (hour >= 18 or hour <= 7) else 30
+            elif b["id"] == 5:
+                occ_base = 70 if (9 <= hour <= 18) else 40
             else:
                 occ_base = 85 if (8 <= hour <= 17) else 15
             
-            if is_weekend and b["id"] != 4:
+            if is_weekend and b["id"] not in [4, 5]:
                 occ_base = int(occ_base * 0.25)
-            if academic_status == 2 and b["id"] != 4:
+            if academic_status == 2 and b["id"] not in [4, 5]:
                 occ_base = int(occ_base * 0.15)
 
             occupancy = max(5, min(100, int(occ_base + np.random.normal(0, 4))))
-            time_factor = 1.0 + 0.45 * np.sin((hour - 6) * np.pi / 12) if 8 <= hour <= 20 else 0.45
+            
+            if b["id"] == 5:
+                time_factor = 1.0 + 0.25 * np.sin((hour - 6) * np.pi / 12) if 8 <= hour <= 20 else 0.80
+            elif b["id"] == 4:
+                time_factor = 1.15 if (hour >= 18 or hour <= 8) else 0.55
+            else:
+                time_factor = 1.0 + 0.45 * np.sin((hour - 6) * np.pi / 12) if 8 <= hour <= 20 else 0.45
+
             temp_hvac_factor = 1.0 + max(0, (temp - 24.0) * 0.04)
             occ_factor = 1.0 + (occupancy / 100.0) * 0.35
 
@@ -504,61 +513,109 @@ def get_dashboard_data():
 
         df['timestamp'] = pd.to_datetime(df['timestamp'])
 
-        # Scoped Global Filter (Uses Indexed timestamp and building_id column)
-        if building_id and building_id != '0':
-            df = df[df['building_id'] == int(building_id)]
+        # 1. Determine Date Range Filter Window
+        latest_time = df['timestamp'].max()
+        if range_val == '24h':
+            start_time = latest_time - pd.Timedelta(hours=23)
+        elif range_val == '7d':
+            start_time = latest_time - pd.Timedelta(days=6)
+        else: # '30d'
+            start_time = latest_time - pd.Timedelta(days=29)
 
-        total_kwh = float(np.round(df['consumption_kwh'].sum(), 2))
-        avg_kwh = float(np.round(df['consumption_kwh'].mean(), 2))
-        max_peak_kw = float(np.round(df['peak_demand_kw'].max(), 2))
-        buildings_count = df['building_id'].nunique()
+        # Filter for campus in this date range
+        range_all_df = df[df['timestamp'] >= start_time]
+
+        # Filter for building if specified
+        if building_id and building_id != '0':
+            scoped_df = range_all_df[range_all_df['building_id'] == int(building_id)]
+        else:
+            scoped_df = range_all_df
+
+        if scoped_df.empty:
+            scoped_df = range_all_df
+
+        total_kwh = float(np.round(scoped_df['consumption_kwh'].sum(), 2))
+        avg_kwh = float(np.round(scoped_df['consumption_kwh'].mean(), 2))
+        max_peak_kw = float(np.round(scoped_df['peak_demand_kw'].max(), 2))
+        buildings_count = scoped_df['building_id'].nunique()
 
         cost_inr = float(np.round(total_kwh * tariff_rate, 2))
         co2_kg = float(np.round(total_kwh * co2_factor, 2))
 
-        latest_time = df['timestamp'].max()
-        past_hours_df = df[df['timestamp'] >= (latest_time - pd.Timedelta(hours=24))]
-        
-        hourly_trend = past_hours_df.groupby(past_hours_df['timestamp'].dt.strftime('%H:00'))['consumption_kwh'].sum().reset_index()
-        actual_labels = hourly_trend['timestamp'].tolist()
-        actual_values = [round(x, 1) for x in hourly_trend['consumption_kwh'].tolist()]
+        # 2. Combined Trend (Actuals + Forecast) based on range_val
+        if range_val == '24h':
+            sorted_df = scoped_df.sort_values('timestamp')
+            trend_grouped = sorted_df.groupby(sorted_df['timestamp'].dt.floor('h'))['consumption_kwh'].sum().reset_index()
+            actual_labels = [ts.strftime('%H:00') for ts in trend_grouped['timestamp']]
+            actual_values = [round(float(x), 1) for x in trend_grouped['consumption_kwh']]
 
-        # Generate 12-Hour Scikit-Learn Forecast
-        forecast_labels = []
-        forecast_values = []
-        last_hour = latest_time.hour
-        for i in range(1, 13):
-            f_time = latest_time + pd.Timedelta(hours=i)
-            f_hour_str = f_time.strftime('%H:00')
-            forecast_labels.append(f_hour_str)
+            # 12-Hour Forecast
+            forecast_labels = []
+            forecast_values = []
+            last_hour = latest_time.hour
+            for i in range(1, 13):
+                f_time = latest_time + pd.Timedelta(hours=i)
+                forecast_labels.append(f_time.strftime('%H:00'))
 
-            f_temp = round(25.0 + 7.0 * np.sin(((last_hour + i) - 8) * np.pi / 12), 1)
-            b_id = int(building_id) if (building_id and building_id != '0') else 1
-            f_feat = np.array([[b_id, f_temp, 65.0, 70, (last_hour + i) % 24, 0, 2, 0]])
-            
-            if ml_model:
-                pred_val = float(ml_model.predict(f_feat)[0])
-            else:
-                pred_val = 110.0 + (f_temp - 24.0) * 3.5
-            
-            if building_id == '0' or not building_id:
-                pred_val *= 5.5
-            
-            forecast_values.append(round(max(10.0, pred_val), 1))
+                f_temp = round(25.0 + 7.0 * np.sin(((last_hour + i) - 8) * np.pi / 12), 1)
+                b_id = int(building_id) if (building_id and building_id != '0') else 1
+                f_feat = np.array([[b_id, f_temp, 65.0, 70, (last_hour + i) % 24, 0, f_time.weekday(), 0]])
+                
+                if ml_model:
+                    pred_val = float(ml_model.predict(f_feat)[0])
+                else:
+                    pred_val = 110.0 + (f_temp - 24.0) * 3.5
+
+                if building_id == '0' or not building_id:
+                    pred_val *= 4.5
+                
+                forecast_values.append(round(max(10.0, pred_val), 1))
+        else:
+            # Daily Trend for 7d & 30d
+            sorted_df = scoped_df.sort_values('timestamp')
+            trend_grouped = sorted_df.groupby(sorted_df['timestamp'].dt.floor('d'))['consumption_kwh'].sum().reset_index()
+            actual_labels = [ts.strftime('%d %b') for ts in trend_grouped['timestamp']]
+            actual_values = [round(float(x), 1) for x in trend_grouped['consumption_kwh']]
+
+            forecast_days = 3 if range_val == '7d' else 5
+            forecast_labels = []
+            forecast_values = []
+            for i in range(1, forecast_days + 1):
+                f_time = latest_time + pd.Timedelta(days=i)
+                forecast_labels.append(f_time.strftime('%d %b'))
+
+                b_id = int(building_id) if (building_id and building_id != '0') else 1
+                f_temp = 28.0 + np.random.normal(0, 0.8)
+                f_feat = np.array([[b_id, f_temp, 65.0, 70, 14, 1 if f_time.weekday() >= 5 else 0, f_time.weekday(), 0]])
+                
+                if ml_model:
+                    hourly_pred = float(ml_model.predict(f_feat)[0])
+                else:
+                    hourly_pred = 110.0
+                
+                if building_id == '0' or not building_id:
+                    hourly_pred *= 4.5
+                
+                daily_pred = round(max(50.0, hourly_pred * 24 * 0.95), 1)
+                forecast_values.append(daily_pred)
 
         combined_labels = actual_labels + forecast_labels
         combined_actuals = actual_values + [None] * len(forecast_labels)
         combined_forecast = [None] * (len(actual_values) - 1) + [actual_values[-1]] + forecast_values
 
-        building_summary = df.groupby('building_name')['consumption_kwh'].sum().reset_index()
-        building_labels = building_summary['building_name'].tolist()
-        building_totals = [round(x, 1) for x in building_summary['consumption_kwh'].tolist()]
+        # 3. Usage by Building Comparison in the Selected Date Range
+        b_summary = range_all_df.groupby(['building_id', 'building_name'])['consumption_kwh'].sum().reset_index()
+        b_summary = b_summary.sort_values('building_id')
+        building_labels = b_summary['building_name'].tolist()
+        building_totals = [round(x, 1) for x in b_summary['consumption_kwh'].tolist()]
+        building_ids = [int(x) for x in b_summary['building_id'].tolist()]
 
-        df['is_peak_hour'] = df['timestamp'].dt.hour.apply(lambda h: 'Peak (08:00-20:00)' if 8 <= h <= 20 else 'Off-Peak')
-        peak_summary = df.groupby('is_peak_hour')['consumption_kwh'].sum().to_dict()
+        scoped_copy = scoped_df.copy()
+        scoped_copy['is_peak_hour'] = scoped_copy['timestamp'].dt.hour.apply(lambda h: 'Peak (08:00-20:00)' if 8 <= h <= 20 else 'Off-Peak')
+        peak_summary = scoped_copy.groupby('is_peak_hour')['consumption_kwh'].sum().to_dict()
 
         anomalies = []
-        recent_df = df[df['timestamp'] >= (latest_time - pd.Timedelta(hours=6))]
+        recent_df = scoped_df[scoped_df['timestamp'] >= (latest_time - pd.Timedelta(hours=24))]
         for _, row in recent_df.iterrows():
             if row['academic_status'] == 2:
                 if row['consumption_kwh'] > (row['base_benchmark_kwh'] * 1.1):
@@ -584,39 +641,48 @@ def get_dashboard_data():
                 unique_anomalies.append(a)
                 seen.add(a['building'])
 
-        df['hour_str'] = df['timestamp'].dt.strftime('%H:00')
-        peak_hours_df = df.groupby(['building_name', 'hour_str'])['consumption_kwh'].mean().reset_index()
-        idx = peak_hours_df.groupby('building_name')['consumption_kwh'].idxmax()
-        building_peaks = peak_hours_df.loc[idx].to_dict(orient='records')
+        scoped_peaks_df = scoped_df.copy()
+        scoped_peaks_df['hour_str'] = scoped_peaks_df['timestamp'].dt.strftime('%H:00')
+        peak_hours_df = scoped_peaks_df.groupby(['building_name', 'hour_str'])['consumption_kwh'].mean().reset_index()
+        if not peak_hours_df.empty:
+            idx = peak_hours_df.groupby('building_name')['consumption_kwh'].idxmax()
+            building_peaks = peak_hours_df.loc[idx].to_dict(orient='records')
+        else:
+            building_peaks = []
 
         # --- Rooftop Solar PV Generation & Net-Metering Model ---
-        # 150 kWp Installed Solar Array with realistic solar bell irradiance curve
         solar_capacity_kw = 150.0
         hourly_solar = []
         hourly_net_grid = []
 
-        for lbl, actual in zip(actual_labels, actual_values):
-            try:
-                h = int(lbl.split(':')[0])
-            except Exception:
-                h = 12
-            if 6 <= h <= 18:
-                # Solar bell curve peaking at midday (11:00 - 14:00) with 85% PR
-                sun_angle = (h - 6) / 12.0 * np.pi
-                solar_gen = solar_capacity_kw * (np.sin(sun_angle) ** 1.8) * 0.85
-                solar_gen = max(0.0, round(float(solar_gen), 1))
-            else:
-                solar_gen = 0.0
+        if range_val == '24h':
+            for lbl, actual in zip(actual_labels, actual_values):
+                try:
+                    h = int(lbl.split(':')[0])
+                except Exception:
+                    h = 12
+                if 6 <= h <= 18:
+                    sun_angle = (h - 6) / 12.0 * np.pi
+                    solar_gen = solar_capacity_kw * (np.sin(sun_angle) ** 1.8) * 0.85
+                    solar_gen = max(0.0, round(float(solar_gen), 1))
+                else:
+                    solar_gen = 0.0
 
-            hourly_solar.append(solar_gen)
-            net_draw = max(0.0, round(actual - solar_gen, 1))
-            hourly_net_grid.append(net_draw)
+                hourly_solar.append(solar_gen)
+                net_draw = max(0.0, round(actual - solar_gen, 1))
+                hourly_net_grid.append(net_draw)
+        else:
+            for lbl, actual in zip(actual_labels, actual_values):
+                solar_gen = round(800.0 * np.random.uniform(0.88, 1.05), 1)
+                hourly_solar.append(solar_gen)
+                net_draw = max(0.0, round(actual - solar_gen, 1))
+                hourly_net_grid.append(net_draw)
 
         total_solar_kwh = round(float(sum(hourly_solar)), 1)
         solar_savings_inr = round(float(total_solar_kwh * tariff_rate), 2)
         solar_co2_kg = round(float(total_solar_kwh * co2_factor), 1)
-        gross_24h_demand = sum(actual_values) if sum(actual_values) > 0 else 1.0
-        clean_energy_share = round(min(100.0, (total_solar_kwh / gross_24h_demand) * 100), 1)
+        gross_demand = sum(actual_values) if sum(actual_values) > 0 else 1.0
+        clean_energy_share = round(min(100.0, (total_solar_kwh / gross_demand) * 100), 1)
         peak_solar_kw = round(float(max(hourly_solar)), 1) if hourly_solar else 0.0
 
         solar_analytics = {
@@ -633,7 +699,6 @@ def get_dashboard_data():
         }
 
         # --- Energy Use Intensity (EUI) & BEE Star Ratings Model ---
-        # EUI = Monthly kWh / Area (sq.ft) benchmarked against BEE/LEED Green Building Standards
         conn, db_type = get_db_connection()
         all_buildings_df = pd.read_sql_query("""
             SELECT b.building_id, b.building_name, b.building_code, b.building_type, b.area_sqft, b.base_benchmark_kwh,
@@ -641,14 +706,16 @@ def get_dashboard_data():
             FROM buildings b
             LEFT JOIN energy_readings r ON b.building_id = r.building_id
             GROUP BY b.building_id
+            ORDER BY b.building_id
         """, conn)
         conn.close()
 
+        selected_b_id = int(building_id) if building_id else 0
         eui_ratings = []
         for _, brow in all_buildings_df.iterrows():
             area = float(brow['area_sqft']) if brow['area_sqft'] else 25000.0
             tot_kwh = float(brow['total_kwh']) if pd.notnull(brow['total_kwh']) else 1000.0
-            r_count = float(brow['reading_count']) if pd.notnull(brow['reading_count']) and brow['reading_count'] > 0 else 336.0
+            r_count = float(brow['reading_count']) if pd.notnull(brow['reading_count']) and brow['reading_count'] > 0 else 720.0
             monthly_est_kwh = (tot_kwh / r_count) * 720.0
             eui = round(monthly_est_kwh / area, 2)
 
@@ -695,7 +762,8 @@ def get_dashboard_data():
                 'rating_class': cls,
                 'label': label,
                 'badge_color': badge_color,
-                'recommendation': rec
+                'recommendation': rec,
+                'is_selected': (int(brow['building_id']) == selected_b_id)
             })
 
         campus_avg_eui = round(sum(b['eui'] for b in eui_ratings) / max(1, len(eui_ratings)), 2)
@@ -723,7 +791,12 @@ def get_dashboard_data():
                 'actuals': combined_actuals,
                 'forecast': combined_forecast
             },
-            'building_breakdown': {'labels': building_labels, 'data': building_totals},
+            'building_breakdown': {
+                'labels': building_labels,
+                'data': building_totals,
+                'building_ids': building_ids,
+                'selected_building_id': int(building_id) if building_id else 0
+            },
             'peak_distribution': peak_summary,
             'anomalies': unique_anomalies,
             'building_peaks': building_peaks,
@@ -809,7 +882,7 @@ def simulate_savings():
         df = pd.read_sql_query(query, conn, params=(building_id,))
         conn.close()
 
-        monthly_kwh = df['consumption_kwh'].sum() * 2
+        monthly_kwh = df['consumption_kwh'].sum()
         saved_kwh = round(monthly_kwh * (reduction_pct / 100.0), 2)
         saved_cost_inr = round(saved_kwh * tariff_rate, 2)
         saved_co2_kg = round(saved_kwh * co2_factor, 2)
@@ -846,7 +919,7 @@ def report_data():
         cost = round(kwh * tariff_rate, 2)
         co2 = round(kwh * co2_factor, 1)
         area = float(r['area_sqft']) if r['area_sqft'] else 25000.0
-        monthly_kwh_est = kwh * 2.14
+        monthly_kwh_est = kwh
         eui = round(monthly_kwh_est / area, 2)
 
         if eui < 2.5:
