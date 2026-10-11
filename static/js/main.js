@@ -128,6 +128,9 @@ async function fetchDashboardData() {
             renderAnalyticsBuildingChart(data.building_breakdown);
             renderAnalyticsPeakChart(data.peak_distribution);
             renderAnalyticsAnomaliesTable(data.anomalies);
+            if (data.eui_ratings) {
+                renderBuildingStarRatings(data.eui_ratings, data.campus_avg_eui, data.top_facility);
+            }
         } else {
             console.error('Failed to load dashboard data:', data.error);
         }
@@ -487,6 +490,65 @@ function renderPeakInsights(peaks) {
             <p>Avg Peak Demand: <strong>${Math.round(p.consumption_kwh * 10) / 10} kWh</strong>. Stagger HVAC operations by 45 mins.</p>
         </div>
     `).join('');
+}
+
+// --- Campus Building Energy Star & EUI Rating Visualizer ---
+function renderBuildingStarRatings(euiRatings, campusAvgEui, topFacility) {
+    const avgBadge = document.getElementById('campusAvgEuiBadge');
+    const topBadge = document.getElementById('topFacilityBadge');
+    const grid = document.getElementById('buildingEuiGrid');
+
+    if (avgBadge && campusAvgEui) {
+        avgBadge.innerText = `${campusAvgEui} kWh/sq.ft`;
+    }
+    if (topBadge && topFacility && topFacility.building_name) {
+        topBadge.innerText = `${topFacility.building_name} (${topFacility.eui} EUI)`;
+    }
+
+    if (!grid || !euiRatings || euiRatings.length === 0) return;
+
+    grid.innerHTML = euiRatings.map(b => {
+        const meterPct = Math.min(100, Math.max(15, (b.eui / 6.0) * 100));
+        return `
+            <div class="eui-building-card" style="background: var(--card-bg); border: 1px solid var(--card-border); border-top: 3px solid ${b.badge_color}; border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.06);">
+                <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                    <div>
+                        <h4 style="font-size: 15px; font-weight: 700; margin-bottom: 2px;">${b.building_name}</h4>
+                        <span style="font-size: 11px; color: var(--text-muted);">${b.building_type} · ${b.area_sqft.toLocaleString()} sq.ft</span>
+                    </div>
+                    <span class="role-badge" style="background: ${b.badge_color}22; color: ${b.badge_color}; border: 1px solid ${b.badge_color}44; font-weight: 700; font-size: 12px; padding: 3px 8px;">
+                        ${b.rating_class}
+                    </span>
+                </div>
+
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 2px;">
+                    <div>
+                        <div style="font-size: 18px; letter-spacing: 2px;">${b.star_icons}</div>
+                        <span style="font-size: 11px; color: var(--text-muted); font-weight: 500;">${b.label}</span>
+                    </div>
+                    <div style="text-align: right;">
+                        <span style="font-size: 20px; font-weight: 700; color: ${b.badge_color};">${b.eui}</span>
+                        <div style="font-size: 10px; color: var(--text-muted);">kWh / sq.ft / mo</div>
+                    </div>
+                </div>
+
+                <!-- EUI Energy Intensity Bar -->
+                <div>
+                    <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">
+                        <span>Intensity Meter</span>
+                        <span>${b.monthly_kwh.toLocaleString()} kWh/mo</span>
+                    </div>
+                    <div style="width: 100%; height: 6px; background: rgba(255,255,255,0.08); border-radius: 6px; overflow: hidden;">
+                        <div style="width: ${meterPct}%; height: 100%; background: ${b.badge_color}; border-radius: 6px;"></div>
+                    </div>
+                </div>
+
+                <div style="font-size: 11px; color: var(--text-muted); background: rgba(255,255,255,0.02); padding: 8px 10px; border-radius: 8px; border: 1px solid var(--card-border);">
+                    <i class="fa-solid fa-circle-info" style="color: ${b.badge_color}; margin-right: 4px;"></i> ${b.recommendation}
+                </div>
+            </div>
+        `;
+    }).join('');
 }
 
 // --- Predict Energy Demand Endpoint ---

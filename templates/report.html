@@ -172,10 +172,12 @@
                 <tr>
                     <th>Building Name</th>
                     <th>Total kWh</th>
+                    <th>EUI (kWh/sq.ft)</th>
+                    <th>BEE Star Rating</th>
                     <th>Est. Cost (₹)</th>
                     <th>CO₂ Impact (kg)</th>
-                    <th>Peak Demand Hour</th>
-                    <th>Efficiency Status</th>
+                    <th>Peak Hour</th>
+                    <th>Status</th>
                 </tr>
             </thead>
             <tbody id="buildingTableBody">
@@ -222,12 +224,14 @@
                 const tbody = document.getElementById('buildingTableBody');
                 tbody.innerHTML = data.buildings.map(b => `
                     <tr>
-                        <td><strong>${b.name}</strong></td>
+                        <td><strong>${b.name}</strong> <small style="color:#64748B;">(${b.area_sqft ? b.area_sqft.toLocaleString() : '--'} sq.ft)</small></td>
                         <td>${b.kwh.toLocaleString()} kWh</td>
+                        <td><strong style="color: #0284C7;">${b.eui || '--'}</strong></td>
+                        <td><span style="letter-spacing: 1px;">${b.stars || '⭐⭐⭐'}</span> <small style="color:#64748B;">(${b.rating || 'Class B'})</small></td>
                         <td>₹${b.cost.toLocaleString()}</td>
                         <td>${b.co2.toLocaleString()} kg</td>
                         <td><span style="color: #0284C7; font-weight: 600;">${b.peak_hour}</span></td>
-                        <td><span style="color: ${b.status === 'Normal' ? '#059669' : '#DC2626'}; font-weight: 600;">${b.status}</span></td>
+                        <td><span style="color: ${b.status && (b.status.includes('Optimal') || b.status === 'Normal') ? '#059669' : '#DC2626'}; font-weight: 600;">${b.status}</span></td>
                     </tr>
                 `).join('');
             })

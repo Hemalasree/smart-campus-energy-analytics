@@ -304,6 +304,31 @@
                         </div>
                     </div>
 
+                    <!-- Campus Building Energy Star & EUI Rating Section -->
+                    <div class="panel-card eui-card" style="margin-top: 20px; border-top: 3px solid #10B981;">
+                        <div class="card-header">
+                            <div>
+                                <h3><i class="fa-solid fa-award" style="color: #10B981;"></i> Campus Building Energy Star & EUI Efficiency Ratings</h3>
+                                <span class="card-subtitle">
+                                    Benchmarked against BEE (Bureau of Energy Efficiency) & LEED Green Standards · EUI = Monthly kWh / Area (sq.ft)
+                                </span>
+                            </div>
+                            <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                                <span class="badge" style="background: rgba(16, 185, 129, 0.15); color: #10B981; border: 1px solid rgba(16, 185, 129, 0.3);">
+                                    Campus Avg: <strong id="campusAvgEuiBadge">-- kWh/sq.ft</strong>
+                                </span>
+                                <span class="badge" style="background: rgba(56, 189, 248, 0.15); color: var(--primary); border: 1px solid rgba(56, 189, 248, 0.3);">
+                                    Top Facility: <strong id="topFacilityBadge">--</strong>
+                                </span>
+                            </div>
+                        </div>
+
+                        <!-- EUI Cards Grid -->
+                        <div id="buildingEuiGrid" class="eui-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-top: 16px;">
+                            <div class="loading-spinner"><i class="fa-solid fa-circle-notch fa-spin"></i> Calculating EUI ratings...</div>
+                        </div>
+                    </div>
+
                     <!-- Peak Demand & Load-Shifting Insights Section -->
                     <div class="panel-card">
                         <div class="card-header">

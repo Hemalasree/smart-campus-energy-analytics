@@ -492,7 +492,7 @@ def get_dashboard_data():
 
         conn, db_type = get_db_connection()
         readings_query = """
-            SELECT r.*, b.building_name, b.building_code, b.base_benchmark_kwh 
+            SELECT r.*, b.building_name, b.building_code, b.building_type, b.area_sqft, b.base_benchmark_kwh 
             FROM energy_readings r
             JOIN buildings b ON r.building_id = b.building_id
         """
@@ -632,6 +632,75 @@ def get_dashboard_data():
             'hourly_net_grid': hourly_net_grid
         }
 
+        # --- Energy Use Intensity (EUI) & BEE Star Ratings Model ---
+        # EUI = Monthly kWh / Area (sq.ft) benchmarked against BEE/LEED Green Building Standards
+        conn, db_type = get_db_connection()
+        all_buildings_df = pd.read_sql_query("""
+            SELECT b.building_id, b.building_name, b.building_code, b.building_type, b.area_sqft, b.base_benchmark_kwh,
+                   SUM(r.consumption_kwh) as total_kwh, COUNT(r.reading_id) as reading_count
+            FROM buildings b
+            LEFT JOIN energy_readings r ON b.building_id = r.building_id
+            GROUP BY b.building_id
+        """, conn)
+        conn.close()
+
+        eui_ratings = []
+        for _, brow in all_buildings_df.iterrows():
+            area = float(brow['area_sqft']) if brow['area_sqft'] else 25000.0
+            tot_kwh = float(brow['total_kwh']) if pd.notnull(brow['total_kwh']) else 1000.0
+            r_count = float(brow['reading_count']) if pd.notnull(brow['reading_count']) and brow['reading_count'] > 0 else 336.0
+            monthly_est_kwh = (tot_kwh / r_count) * 720.0
+            eui = round(monthly_est_kwh / area, 2)
+
+            if eui < 2.5:
+                stars = 5
+                cls = 'Class A'
+                label = 'High Efficiency (BEE 5-Star)'
+                badge_color = '#10B981'
+                rec = 'Exceeds National Green Building Energy Standards.'
+            elif eui < 3.2:
+                stars = 4
+                cls = 'Class B'
+                label = 'Good Efficiency (BEE 4-Star)'
+                badge_color = '#0284C7'
+                rec = 'Strong performance. Maintain optimal chiller setpoints.'
+            elif eui < 4.0:
+                stars = 3
+                cls = 'Class C'
+                label = 'Moderate Efficiency (BEE 3-Star)'
+                badge_color = '#F59E0B'
+                rec = 'Target for LED retrofits & occupancy sensor installation.'
+            elif eui < 5.0:
+                stars = 2
+                cls = 'Class D'
+                label = 'High Consumption (BEE 2-Star)'
+                badge_color = '#F97316'
+                rec = 'Consider load staggering and AC scheduling.'
+            else:
+                stars = 1
+                cls = 'Class E'
+                label = 'Energy Inefficient (BEE 1-Star)'
+                badge_color = '#EF4444'
+                rec = 'Critical: Urgent HVAC duct insulation & load shifting required.'
+
+            eui_ratings.append({
+                'building_id': int(brow['building_id']),
+                'building_name': brow['building_name'],
+                'building_type': brow['building_type'],
+                'area_sqft': int(area),
+                'monthly_kwh': round(monthly_est_kwh, 1),
+                'eui': eui,
+                'stars': stars,
+                'star_icons': '⭐' * stars,
+                'rating_class': cls,
+                'label': label,
+                'badge_color': badge_color,
+                'recommendation': rec
+            })
+
+        campus_avg_eui = round(sum(b['eui'] for b in eui_ratings) / max(1, len(eui_ratings)), 2)
+        top_facility = min(eui_ratings, key=lambda x: x['eui']) if eui_ratings else {}
+
         return jsonify({
             'metrics': {
                 'total_kwh': total_kwh,
@@ -641,9 +710,14 @@ def get_dashboard_data():
                 'co2_kg': co2_kg,
                 'buildings_count': buildings_count,
                 'sustainability_score': 88,
-                'tariff_rate': tariff_rate
+                'tariff_rate': tariff_rate,
+                'campus_avg_eui': campus_avg_eui,
+                'top_facility_name': top_facility.get('building_name', 'Admin & IT Center')
             },
             'solar': solar_analytics,
+            'eui_ratings': eui_ratings,
+            'campus_avg_eui': campus_avg_eui,
+            'top_facility': top_facility,
             'combined_trend': {
                 'labels': combined_labels,
                 'actuals': combined_actuals,
@@ -755,7 +829,7 @@ def report_data():
     tariff_rate, co2_factor = get_current_tariff()
     conn, db_type = get_db_connection()
     df = pd.read_sql_query("""
-        SELECT r.consumption_kwh, r.peak_demand_kw, b.building_name, b.base_benchmark_kwh
+        SELECT r.consumption_kwh, r.peak_demand_kw, b.building_name, b.area_sqft, b.base_benchmark_kwh
         FROM energy_readings r JOIN buildings b ON r.building_id = b.building_id
     """, conn)
     conn.close()
@@ -765,18 +839,42 @@ def report_data():
     total_co2 = float(total_kwh * co2_factor)
     max_peak = float(df['peak_demand_kw'].max())
 
-    b_group = df.groupby('building_name').agg({'consumption_kwh': 'sum', 'base_benchmark_kwh': 'first'}).reset_index()
+    b_group = df.groupby('building_name').agg({'consumption_kwh': 'sum', 'area_sqft': 'first', 'base_benchmark_kwh': 'first'}).reset_index()
     buildings = []
     for _, r in b_group.iterrows():
         kwh = round(r['consumption_kwh'], 1)
         cost = round(kwh * tariff_rate, 2)
         co2 = round(kwh * co2_factor, 1)
-        status = "Normal" if kwh <= r['base_benchmark_kwh'] * 200 else "Action Needed"
+        area = float(r['area_sqft']) if r['area_sqft'] else 25000.0
+        monthly_kwh_est = kwh * 2.14
+        eui = round(monthly_kwh_est / area, 2)
+
+        if eui < 2.5:
+            stars = "⭐⭐⭐⭐⭐"
+            rating = "Class A"
+        elif eui < 3.2:
+            stars = "⭐⭐⭐⭐"
+            rating = "Class B"
+        elif eui < 4.0:
+            stars = "⭐⭐⭐"
+            rating = "Class C"
+        elif eui < 5.0:
+            stars = "⭐⭐"
+            rating = "Class D"
+        else:
+            stars = "⭐"
+            rating = "Class E"
+
+        status = "Optimal" if eui < 2.5 else ("Normal" if eui < 3.5 else "Action Needed")
         buildings.append({
             'name': r['building_name'],
             'kwh': kwh,
             'cost': cost,
             'co2': co2,
+            'area_sqft': int(area),
+            'eui': eui,
+            'stars': stars,
+            'rating': rating,
             'peak_hour': '14:00 - 16:00',
             'status': status
         })
