@@ -1,4 +1,4 @@
-# BIT Smart Campus Energy Consumption Analytics System ⚡
+# Smart Campus Energy Consumption Analytics System ⚡
 
 A web-based intelligent energy monitoring, analytics, and predictive decision-support system developed using Python (Flask), MySQL/SQLite, Pandas, NumPy, Scikit-learn, and Chart.js.
 
@@ -31,8 +31,8 @@ A web-based intelligent energy monitoring, analytics, and predictive decision-su
 
 ### 1. Clone the repository
 ```bash
-git clone https://github.com/<your-username>/bit_smart_campus.git
-cd bit_smart_campus
+git clone https://github.com/<your-username>/smart_campus.git
+cd smart_campus
 ```
 
 ### 2. Install dependencies
@@ -49,5 +49,5 @@ python app.py
 Open your browser and visit: `http://127.0.0.1:5000/`
 
 **Demo Credentials**:
-- **Email**: `admin@bit.edu.in`
+- **Email**: `admin@campus.edu`
 - **Password**: `admin`

@@ -248,8 +248,8 @@ def init_db():
     cursor.execute("SELECT COUNT(*) FROM users")
     if cursor.fetchone()[0] == 0:
         users_data = [
-            ('admin', 'admin@bit.edu.in', 'admin', 'admin'),
-            ('viewer', 'viewer@bit.edu.in', 'viewer', 'viewer')
+            ('admin', 'admin@campus.edu', 'admin', 'admin'),
+            ('viewer', 'viewer@campus.edu', 'viewer', 'viewer')
         ]
         ph_u = "(?,?,?,?)" if db_type == "sqlite" else "(%s,%s,%s,%s)"
         cursor.executemany(f"INSERT INTO users (username, email, password_hash, role) VALUES {ph_u}", users_data)
@@ -417,7 +417,7 @@ def api_login():
         role = 'Admin' if 'admin' in login_id.lower() else 'Viewer'
         session['user'] = {
             'username': login_id,
-            'email': login_id if '@' in login_id else f"{login_id}@bit.edu.in",
+            'email': login_id if '@' in login_id else f"{login_id}@campus.edu",
             'name': f"Campus {role}",
             'role': role,
             'auth_type': 'standard'
@@ -429,8 +429,8 @@ def api_login():
 def google_auth():
     session['user'] = {
         'username': 'admin',
-        'email': 'admin@bit.edu.in',
-        'name': 'BIT Admin (Google Account)',
+        'email': 'admin@campus.edu',
+        'name': 'Campus Admin (Google Account)',
         'role': 'Admin',
         'auth_type': 'google'
     }
@@ -468,7 +468,7 @@ def live_weather():
                 'success': True,
                 'temperature': round(float(temp_c), 1),
                 'humidity': humidity,
-                'location': 'BIT Campus',
+                'location': 'Campus Live',
                 'source': 'Live Open-Meteo Weather API'
             })
     except Exception:
@@ -478,7 +478,7 @@ def live_weather():
             'success': True,
             'temperature': fallback_temp,
             'humidity': 62,
-            'location': 'BIT Campus (Live Sensor)',
+            'location': 'Campus Live (Sensor)',
             'source': 'Live Sensor'
         })
 

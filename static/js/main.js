@@ -49,7 +49,7 @@ function toggleSidebar() {
 
 // --- Theme Switcher ---
 function initTheme() {
-    const savedTheme = localStorage.getItem('bit_theme') || 'dark';
+    const savedTheme = localStorage.getItem('campus_theme') || 'dark';
     document.documentElement.setAttribute('data-theme', savedTheme);
     updateThemeUI(savedTheme);
 }
@@ -60,7 +60,7 @@ function toggleTheme() {
     const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
     
     html.setAttribute('data-theme', newTheme);
-    localStorage.setItem('bit_theme', newTheme);
+    localStorage.setItem('campus_theme', newTheme);
     updateThemeUI(newTheme);
 
     if (combinedTrendChart) fetchDashboardData();
