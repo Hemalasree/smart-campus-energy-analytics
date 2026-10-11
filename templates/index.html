@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BIT Smart Campus - Energy Analytics & Predictive System</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="layout-wrapper">
+        <header class="topbar">
+            <div class="topbar-left">
+                <div class="brand">
+                    <span class="brand-logo"><i class="fa-solid fa-bolt-lightning"></i></span>
+                    <div class="brand-text">
+                        <h2>BIT Smart Campus ⚡</h2>
+                        <span class="tagline">Energy Consumption Analytics System</span>
+                    </div>
+                </div>
+
+                <div class="global-filters">
+                    <div class="filter-group">
+                        <i class="fa-solid fa-building-circle-check"></i>
+                        <select id="global-building-filter" onchange="onGlobalFilterChange()">
+                            <option value="0" selected>All Buildings (Campus Wide)</option>
+                            <option value="1">Academic Block A</option>
+                            <option value="2">Academic Block B</option>
+                            <option value="3">Central Library</option>
+                            <option value="4">Main Hostel Complex</option>
+                            <option value="5">Research & Innovation Lab</option>
+                            <option value="6">Admin & IT Center</option>
+                        </select>
+                    </div>
+
+                    <div class="filter-group">
+                        <i class="fa-solid fa-calendar-days"></i>
+                        <select id="global-date-range" onchange="onGlobalFilterChange()">
+                            <option value="24h" selected>Last 24 Hours</option>
+                            <option value="7d">Last 7 Days</option>
+                            <option value="30d">Last 30 Days</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <div class="topbar-right">
+                <div class="weather-pill" id="weatherPill" onclick="syncLiveTemperature()" title="Click to refresh live weather">
+                    <i class="fa-solid fa-cloud-sun"></i>
+                    <span><strong id="live-campus-temp">32°C</strong> · BIT Campus</span>
+                </div>
+
+                <button class="icon-btn theme-btn" onclick="toggleTheme()" title="Switch Light/Dark Theme">
+                    <i class="fa-solid fa-moon" id="theme-icon"></i>
+                </button>
+
+                <div class="notif-bell" onclick="switchView('recommendations')" title="Active Recommendations & Alerts">
+                    <i class="fa-solid fa-bell"></i>
+                    <span class="notif-badge">3</span>
+                </div>
+
+                <button class="btn-report" onclick="window.open('/report', '_blank')" title="Print Executive Summary Report">
+                    <i class="fa-solid fa-file-pdf"></i> Report
+                </button>
+
+                <div class="user-menu">
+                    <div class="avatar"><i class="fa-solid fa-user-shield"></i></div>
+                    <div class="user-details">
+                        <span class="user-name">{{ user.name if user else 'Campus Admin' }}</span>
+                        <span class="role-badge {{ 'admin' if user and user.role == 'Admin' else 'viewer' }}">
+                            {{ user.role if user else 'Admin' }}
+                        </span>
+                    </div>
+                    <a href="/logout" class="logout-btn" title="Logout"><i class="fa-solid fa-right-from-bracket"></i></a>
+                </div>
+            </div>
+        </header>
+
+        <div class="body-container">
+            <aside class="sidebar" id="sidebar">
+                <nav class="nav-menu">
+                    <a href="#" class="nav-item active" id="nav-dashboard" onclick="switchView('dashboard')">
+                        <i class="fa-solid fa-chart-pie"></i>
+                        <span class="nav-text">Dashboard</span>
+                    </a>
+                    <a href="#" class="nav-item" id="nav-analytics" onclick="switchView('analytics')">
+                        <i class="fa-solid fa-chart-simple"></i>
+                        <span class="nav-text">Analytics</span>
+                    </a>
+                    <a href="#" class="nav-item" id="nav-predictions" onclick="switchView('predictions')">
+                        <i class="fa-solid fa-wand-magic-sparkles"></i>
+                        <span class="nav-text">Predictions</span>
+                    </a>
+                    <a href="#" class="nav-item" id="nav-recommendations" onclick="switchView('recommendations')">
+                        <i class="fa-solid fa-lightbulb"></i>
+                        <span class="nav-text">Recommendations</span>
+                        <span class="badge nav-badge">3</span>
+                    </a>
+                    
+                    <div class="nav-divider"></div>
+                    
+                    <a href="#" class="nav-item {{ 'disabled' if user and user.role != 'Admin' }}" id="nav-upload" onclick="switchView('upload')">
+                        <i class="fa-solid fa-cloud-arrow-up"></i>
+                        <span class="nav-text">Upload Data</span>
+                        {% if user and user.role != 'Admin' %}<i class="fa-solid fa-lock lock-icon"></i>{% endif %}
+                    </a>
+                    <a href="#" class="nav-item {{ 'disabled' if user and user.role != 'Admin' }}" id="nav-users" onclick="switchView('users')">
+                        <i class="fa-solid fa-users-gear"></i>
+                        <span class="nav-text">Users & Roles</span>
+                        {% if user and user.role != 'Admin' %}<i class="fa-solid fa-lock lock-icon"></i>{% endif %}
+                    </a>
+                </nav>
+
+                <button class="sidebar-toggle" onclick="toggleSidebar()">
+                    <i class="fa-solid fa-chevron-left" id="sidebar-icon"></i>
+                    <span class="nav-text">Collapse Sidebar</span>
+                </button>
+            </aside>
+
+            <main class="main-content">
+                <div class="view-section active" id="view-dashboard">
+                    <section class="kpi-grid">
+                        <div class="kpi-card">
+                            <div class="kpi-icon blue"><i class="fa-solid fa-plug"></i></div>
+                            <div class="kpi-info">
+                                <span class="kpi-label">Total Power Consumption</span>
+                                <h2 id="metric-total-kwh">-- <small>kWh</small></h2>
+                                <span class="kpi-trend positive"><i class="fa-solid fa-arrow-down"></i> 4.2% vs last week</span>
+                            </div>
+                        </div>
+
+                        <div class="kpi-card">
+                            <div class="kpi-icon green"><i class="fa-solid fa-indian-rupee-sign"></i></div>
+                            <div class="kpi-info">
+                                <span class="kpi-label">Est. Cost (TANGEDCO)</span>
+                                <h2 id="metric-cost">₹--</h2>
+                                <span class="kpi-subtext">Tariff: ₹8.50/unit</span>
+                            </div>
+                        </div>
+
+                        <div class="kpi-card">
+                            <div class="kpi-icon purple"><i class="fa-solid fa-cloud"></i></div>
+                            <div class="kpi-info">
+                                <span class="kpi-label">Carbon Footprint (CO₂)</span>
+                                <h2 id="metric-co2">-- <small>kg</small></h2>
+                                <span class="kpi-subtext">CEA Grid Factor: 0.82 kg/kWh</span>
+                            </div>
+                        </div>
+
+                        <div class="kpi-card">
+                            <div class="kpi-icon amber"><i class="fa-solid fa-building"></i></div>
+                            <div class="kpi-info">
+                                <span class="kpi-label">Buildings Tracked</span>
+                                <h2 id="metric-buildings-count">6 <small>facilities</small></h2>
+                                <span class="kpi-subtext">Campus Peak: <strong id="metric-peak-kw">-- kW</strong></span>
+                            </div>
+                        </div>
+                    </section>
+
+                    <div class="chart-card full-width">
+                        <div class="card-header">
+                            <div>
+                                <h3><i class="fa-solid fa-chart-line"></i> Power Consumption & 12-Hour ML Forecast</h3>
+                                <span class="card-subtitle">Real-time readings merged with Scikit-learn Random Forest predictive trajectory</span>
+                            </div>
+                            <div class="chart-legend">
+                                <span class="legend-item"><span class="line-solid"></span> Actual Usage</span>
+                                <span class="legend-item"><span class="line-dashed"></span> ML Forecast</span>
+                            </div>
+                        </div>
+                        <div class="chart-container large">
+                            <canvas id="combinedTrendChart"></canvas>
+                        </div>
+                    </div>
+
+                    <div class="split-grid">
+                        <div class="chart-card">
+                            <div class="card-header">
+                                <h3><i class="fa-solid fa-building-user"></i> Usage by Building</h3>
+                                <span class="badge">Comparison</span>
+                            </div>
+                            <div class="chart-container small">
+                                <canvas id="buildingChart"></canvas>
+                            </div>
+                        </div>
+
+                        <div class="chart-card">
+                            <div class="card-header">
+                                <h3><i class="fa-solid fa-clock"></i> Peak vs Off-Peak Distribution</h3>
+                                <span class="badge">Pattern</span>
+                            </div>
+                            <div class="chart-container small">
+                                <canvas id="peakChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="split-grid">
+                        <div class="panel-card">
+                            <div class="card-header">
+                                <h3><i class="fa-solid fa-triangle-exclamation"></i> Real-time Anomaly Detector</h3>
+                                <a href="#" class="view-link" onclick="switchView('analytics')">View All →</a>
+                            </div>
+                            <div id="anomalyList" class="anomaly-list">
+                                <div class="loading-spinner"><i class="fa-solid fa-circle-notch fa-spin"></i> Checking sensor feeds...</div>
+                            </div>
+                        </div>
+
+                        <div class="panel-card">
+                            <div class="card-header">
+                                <h3><i class="fa-solid fa-lightbulb"></i> Strategic Action Preview</h3>
+                                <a href="#" class="view-link" onclick="switchView('recommendations')">View All (3) →</a>
+                            </div>
+                            <div class="rec-preview-list">
+                                <div class="rec-item">
+                                    <i class="fa-solid fa-temperature-arrow-down" style="color: var(--warning);"></i>
+                                    <div>
+                                        <strong>Peak Load Shifting (14:00 - 16:00)</strong>
+                                        <p>Stagger Central Library HVAC setpoints to 24°C during peak afternoon load.</p>
+                                    </div>
+                                </div>
+                                <div class="rec-item">
+                                    <i class="fa-solid fa-power-off" style="color: var(--success);"></i>
+                                    <div>
+                                        <strong>Off-Peak Night Sleep Mode</strong>
+                                        <p>Enable automated computer lab sleep schedules across Academic Blocks.</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="view-section" id="view-analytics">
+                    <div class="card-header" style="margin-bottom: 8px;">
+                        <h2><i class="fa-solid fa-chart-simple"></i> Comprehensive Energy Consumption Analytics</h2>
+                        <span class="badge ai-badge">Multi-Dimensional Analysis</span>
+                    </div>
+
+                    <div class="split-grid">
+                        <div class="chart-card">
+                            <div class="card-header">
+                                <h3><i class="fa-solid fa-chart-bar"></i> Building Energy Intensity Comparison</h3>
+                                <span class="badge">kWh breakdown</span>
+                            </div>
+                            <div class="chart-container">
+                                <canvas id="analyticsBuildingChart"></canvas>
+                            </div>
+                        </div>
+
+                        <div class="chart-card">
+                            <div class="card-header">
+                                <h3><i class="fa-solid fa-pie-chart"></i> Diurnal Peak vs Off-Peak Energy Split</h3>
+                                <span class="badge">Operational Profile</span>
+                            </div>
+                            <div class="chart-container">
+                                <canvas id="analyticsPeakChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Peak Demand & Load-Shifting Insights Section -->
+                    <div class="panel-card">
+                        <div class="card-header">
+                            <h3><i class="fa-solid fa-network-wired"></i> Building Peak Demand & Load-Shifting Recommendations</h3>
+                        </div>
+                        <div id="peakInsightsList" class="peak-insights-grid">
+                            <div class="loading-spinner"><i class="fa-solid fa-circle-notch fa-spin"></i> Calculating peak demand...</div>
+                        </div>
+                    </div>
+
+                    <div class="panel-card">
+                        <div class="card-header">
+                            <h3><i class="fa-solid fa-shield-cat"></i> Academic Calendar Anomaly Register</h3>
+                            <span class="badge">Audit Trail</span>
+                        </div>
+                        <div id="analyticsAnomalyTableContainer">
+                            <table class="user-table">
+                                <thead>
+                                    <tr>
+                                        <th>Building</th>
+                                        <th>Anomaly Type</th>
+                                        <th>Detection Message</th>
+                                        <th>Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="analyticsAnomalyTableBody">
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="view-section" id="view-predictions">
+                    <div class="split-grid">
+                        <div class="panel-card ai-card">
+                            <div class="card-header">
+                                <h3><i class="fa-solid fa-wand-magic-sparkles"></i> AI Energy Demand Predictor</h3>
+                                <button type="button" class="btn-sync-weather" onclick="syncLiveTemperature()">
+                                    <i class="fa-solid fa-cloud-sun"></i> Weather API
+                                </button>
+                            </div>
+                            
+                            <form id="predictionForm" onsubmit="event.preventDefault(); predictEnergy();">
+                                <div class="form-group">
+                                    <label for="pred-building"><i class="fa-solid fa-building"></i> Select Campus Building</label>
+                                    <select id="pred-building" class="form-control">
+                                        <option value="1">Academic Block A</option>
+                                        <option value="2">Academic Block B</option>
+                                        <option value="3">Central Library</option>
+                                        <option value="4" selected>Main Hostel Complex</option>
+                                        <option value="5">Research & Innovation Lab</option>
+                                        <option value="6">Admin & IT Center</option>
+                                    </select>
+                                </div>
+
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label for="pred-temp">
+                                            <i class="fa-solid fa-temperature-three-quarters"></i> Ambient Temp (°C)
+                                            <span class="live-tag"><i class="fa-solid fa-bolt"></i> Live API</span>
+                                        </label>
+                                        <input type="range" id="pred-temp" min="18" max="42" value="28" oninput="document.getElementById('temp-val').innerText = this.value + '°C'">
+                                        <span class="range-val" id="temp-val">28°C</span>
+                                    </div>
+
+                                    <div class="form-group">
+                                        <label for="pred-occ"><i class="fa-solid fa-users"></i> Occupancy Level (%)</label>
+                                        <input type="range" id="pred-occ" min="10" max="100" value="75" oninput="document.getElementById('occ-val').innerText = this.value + '%'">
+                                        <span class="range-val" id="occ-val">75%</span>
+                                    </div>
+                                </div>
+
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label for="pred-hour"><i class="fa-solid fa-clock"></i> Hour of Day</label>
+                                        <select id="pred-hour" class="form-control">
+                                            <option value="9">09:00 AM (Morning)</option>
+                                            <option value="14" selected>02:00 PM (Peak Afternoon)</option>
+                                            <option value="19">07:00 PM (Evening)</option>
+                                            <option value="23">11:00 PM (Night)</option>
+                                        </select>
+                                    </div>
+
+                                    <div class="form-group">
+                                        <label for="pred-calendar"><i class="fa-solid fa-graduation-cap"></i> Academic Status</label>
+                                        <select id="pred-calendar" class="form-control">
+                                            <option value="0" selected>Regular Term</option>
+                                            <option value="1">End-Semester Exams</option>
+                                            <option value="2">Vacation / Break</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <button type="submit" class="btn-primary">
+                                    <i class="fa-solid fa-calculator"></i> Calculate Predicted Demand
+                                </button>
+                            </form>
+
+                            <div id="predictionResult" class="result-box hidden">
+                                <div class="result-header">
+                                    <div>
+                                        <span class="result-title">Predicted Power Usage</span>
+                                        <h2 id="res-kwh">0.0 <small>kWh</small></h2>
+                                    </div>
+                                </div>
+                                <div class="result-stats">
+                                    <div class="stat-item">
+                                        <span class="stat-label">Estimated Cost</span>
+                                        <strong id="res-cost">₹0.00</strong>
+                                    </div>
+                                    <div class="stat-item">
+                                        <span class="stat-label">Carbon Impact</span>
+                                        <strong id="res-carbon">0.0 kg CO₂</strong>
+                                    </div>
+                                </div>
+                                <div class="ai-recommendation">
+                                    <i class="fa-solid fa-lightbulb"></i>
+                                    <p id="res-recommendation">Processing recommendation...</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="panel-card simulator-card">
+                            <div class="card-header">
+                                <h3><i class="fa-solid fa-sliders"></i> What-If Energy Savings Simulator</h3>
+                                <span class="badge">Decision Tool</span>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="sim-building"><i class="fa-solid fa-building"></i> Select Building</label>
+                                <select id="sim-building" class="form-control" onchange="runSimulation()">
+                                    <option value="1">Academic Block A</option>
+                                    <option value="2">Academic Block B</option>
+                                    <option value="3">Central Library</option>
+                                    <option value="4">Main Hostel Complex</option>
+                                    <option value="5">Research & Innovation Lab</option>
+                                </select>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="sim-reduction">Target Usage Reduction (%): <strong id="sim-pct-val" style="color: var(--primary);">15%</strong></label>
+                                <input type="range" id="sim-reduction" min="5" max="40" value="15" step="5" oninput="document.getElementById('sim-pct-val').innerText = this.value + '%'; runSimulation();">
+                            </div>
+
+                            <div class="sim-result-box">
+                                <div class="sim-stat">
+                                    <span class="stat-label">Monthly Savings</span>
+                                    <h3 id="sim-cost-save" style="color: var(--success);">₹0</h3>
+                                </div>
+                                <div class="sim-stat">
+                                    <span class="stat-label">Units Saved</span>
+                                    <h3 id="sim-kwh-save" style="color: var(--primary);">0 kWh</h3>
+                                </div>
+                                <div class="sim-stat">
+                                    <span class="stat-label">CO₂ Prevented</span>
+                                    <h3 id="sim-co2-save" style="color: var(--purple);">0 kg</h3>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="view-section" id="view-recommendations">
+                    <div class="panel-card">
+                        <div class="card-header">
+                            <h2><i class="fa-solid fa-lightbulb"></i> Campus Energy Efficiency Recommendations</h2>
+                        </div>
+                        <div class="rec-full-list">
+                            <div class="rec-card-full">
+                                <div class="rec-icon amber"><i class="fa-solid fa-temperature-arrow-down"></i></div>
+                                <div class="rec-body">
+                                    <h3>1. HVAC Setpoint Optimization during High Ambient Heat</h3>
+                                    <p>When ambient weather exceeds 30°C, adjust central HVAC setpoints to 24°C. Reduces peak compressor power draw by 15% across Academic Blocks.</p>
+                                    <span class="rec-meta">Est. Savings: ₹14,200/month | Priority: High</span>
+                                </div>
+                            </div>
+                            <div class="rec-card-full">
+                                <div class="rec-icon green"><i class="fa-solid fa-moon"></i></div>
+                                <div class="rec-body">
+                                    <h3>2. Automated Night Sleep Schedules for Computer Labs</h3>
+                                    <p>Enforce automated power-off policies on 450+ IT lab desktops during 22:00 to 06:00 off-peak hours.</p>
+                                    <span class="rec-meta">Est. Savings: ₹8,500/month | Priority: Medium</span>
+                                </div>
+                            </div>
+                            <div class="rec-card-full">
+                                <div class="rec-icon purple"><i class="fa-solid fa-graduation-cap"></i></div>
+                                <div class="rec-body">
+                                    <h3>3. Vacation Term Power Reduction</h3>
+                                    <p>Automatically lower building benchmark baselines by 40% during semester breaks as detected by the Academic Calendar engine.</p>
+                                    <span class="rec-meta">Est. Savings: ₹22,000/break | Priority: High</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="view-section" id="view-upload">
+                    <div class="panel-card">
+                        <div class="card-header">
+                            <h2><i class="fa-solid fa-cloud-arrow-up"></i> Upload Smart Meter CSV Readings</h2>
+                            <span class="badge ai-badge">Admin Access Required</span>
+                        </div>
+                        {% if user and user.role == 'Admin' %}
+                        <div class="upload-dropzone">
+                            <i class="fa-solid fa-file-csv" style="font-size: 40px; color: var(--primary);"></i>
+                            <p>Drag and drop smart meter CSV data files here, or click to browse</p>
+                            <input type="file" accept=".csv" class="form-control" style="max-width: 300px; margin-top: 10px;">
+                            <button class="btn-primary" style="max-width: 200px; margin-top: 14px;"><i class="fa-solid fa-upload"></i> Process Dataset</button>
+                        </div>
+                        {% else %}
+                        <div class="access-denied-box">
+                            <i class="fa-solid fa-lock" style="font-size: 32px; color: var(--danger);"></i>
+                            <h3>Access Restricted</h3>
+                            <p>Data upload capabilities are restricted to users with the <strong>Admin</strong> role.</p>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="view-section" id="view-users">
+                    <div class="panel-card">
+                        <div class="card-header">
+                            <h2><i class="fa-solid fa-users-gear"></i> User Roles & Access Control</h2>
+                        </div>
+                        {% if user and user.role == 'Admin' %}
+                        <table class="user-table">
+                            <thead>
+                                <tr>
+                                    <th>User Email</th>
+                                    <th>Display Name</th>
+                                    <th>Assigned Role</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>admin@bit.edu.in</td>
+                                    <td>Campus Administrator</td>
+                                    <td><span class="role-badge admin">Admin</span></td>
+                                    <td><span style="color: var(--success); font-weight: 600;">Active</span></td>
+                                </tr>
+                                <tr>
+                                    <td>viewer@bit.edu.in</td>
+                                    <td>Faculty Reviewer</td>
+                                    <td><span class="role-badge viewer">Viewer</span></td>
+                                    <td><span style="color: var(--success); font-weight: 600;">Active</span></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        {% else %}
+                        <div class="access-denied-box">
+                            <i class="fa-solid fa-lock" style="font-size: 32px; color: var(--danger);"></i>
+                            <h3>Access Restricted</h3>
+                            <p>User and role management is restricted to <strong>Admin</strong> accounts.</p>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </main>
+        </div>
+
+        <footer class="footer">
+            <p>BIT Smart Campus Energy Analytics & Predictive System &copy; 2026</p>
+        </footer>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>

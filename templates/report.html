@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>BIT Smart Campus - Executive Energy & Sustainability Report</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+            font-family: 'Outfit', sans-serif;
+            color: #1E293B;
+            background: #F8FAFC;
+            padding: 40px;
+            margin: 0;
+        }
+        .report-card {
+            max-width: 900px;
+            margin: 0 auto;
+            background: #FFFFFF;
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+            border: 1px solid #E2E8F0;
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 2px solid #0284C7;
+            padding-bottom: 20px;
+            margin-bottom: 30px;
+        }
+        .header h1 {
+            font-size: 24px;
+            color: #0F172A;
+            margin: 0;
+        }
+        .header p {
+            font-size: 13px;
+            color: #64748B;
+            margin: 4px 0 0 0;
+        }
+        .badge {
+            background: #E0F2FE;
+            color: #0284C7;
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 600;
+        }
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+            margin-bottom: 30px;
+        }
+        .metric-box {
+            background: #F1F5F9;
+            padding: 16px;
+            border-radius: 8px;
+            border-left: 4px solid #0284C7;
+        }
+        .metric-box label {
+            font-size: 12px;
+            color: #64748B;
+            display: block;
+        }
+        .metric-box .value {
+            font-size: 20px;
+            font-weight: 700;
+            color: #0F172A;
+            margin-top: 4px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 30px;
+        }
+        th, td {
+            padding: 12px 14px;
+            text-align: left;
+            border-bottom: 1px solid #E2E8F0;
+            font-size: 13px;
+        }
+        th {
+            background: #F8FAFC;
+            color: #475569;
+            font-weight: 600;
+        }
+        .section-title {
+            font-size: 16px;
+            font-weight: 700;
+            color: #0F172A;
+            margin-bottom: 14px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .rec-box {
+            background: #FEF3C7;
+            border-left: 4px solid #D97706;
+            padding: 14px 18px;
+            border-radius: 6px;
+            font-size: 13px;
+            color: #78350F;
+            margin-bottom: 12px;
+        }
+        .print-btn {
+            background: #0284C7;
+            color: #FFF;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            float: right;
+            margin-bottom: 20px;
+        }
+        .signature-block {
+            margin-top: 50px;
+            display: flex;
+            justify-content: space-between;
+            padding-top: 20px;
+            border-top: 1px solid #E2E8F0;
+            font-size: 12px;
+            color: #64748B;
+        }
+        @media print {
+            .print-btn { display: none; }
+            body { padding: 0; background: #FFF; }
+            .report-card { box-shadow: none; border: none; padding: 0; }
+        }
+    </style>
+</head>
+<body>
+    <div style="max-width: 900px; margin: 0 auto;">
+        <button class="print-btn" onclick="window.print()"><i class="fa-solid fa-print"></i> Print / Save as PDF</button>
+    </div>
+
+    <div class="report-card">
+        <div class="header">
+            <div>
+                <h1>BIT Smart Campus Energy & Sustainability Report</h1>
+                <p>Generated on: <span id="report-date">--</span> | Bannari Amman Institute of Technology</p>
+            </div>
+            <div class="badge">Academic Term: Regular Classes</div>
+        </div>
+
+        <div class="metrics-grid">
+            <div class="metric-box">
+                <label>Total Power Consumption</label>
+                <div class="value" id="rep-kwh">-- kWh</div>
+            </div>
+            <div class="metric-box">
+                <label>Est. Energy Expenditure</label>
+                <div class="value" id="rep-cost">₹--</div>
+            </div>
+            <div class="metric-box">
+                <label>Carbon Emissions (CO₂)</label>
+                <div class="value" id="rep-co2">-- kg</div>
+            </div>
+            <div class="metric-box">
+                <label>Campus Peak Load</label>
+                <div class="value" id="rep-peak">-- kW</div>
+            </div>
+        </div>
+
+        <div class="section-title"><i class="fa-solid fa-building"></i> Building Energy & Peak Demand Summary</div>
+        <table>
+            <thead>
+                <tr>
+                    <th>Building Name</th>
+                    <th>Total kWh</th>
+                    <th>Est. Cost (₹)</th>
+                    <th>CO₂ Impact (kg)</th>
+                    <th>Peak Demand Hour</th>
+                    <th>Efficiency Status</th>
+                </tr>
+            </thead>
+            <tbody id="buildingTableBody">
+                <!-- Dynamically populated -->
+            </tbody>
+        </table>
+
+        <div class="section-title"><i class="fa-solid fa-lightbulb"></i> Strategic Energy Management Recommendations</div>
+        <div class="rec-box">
+            <strong>1. Peak Load Shifting:</strong> Stagger Central Library & Research Lab AC operations between 14:00 - 16:00 to reduce peak demand surcharge by ~₹14,200/month.
+        </div>
+        <div class="rec-box">
+            <strong>2. Smart Academic Calendar Setpoints:</strong> Automatically drop HVAC baselines by 40% during upcoming Semester Exam & Vacation periods.
+        </div>
+        <div class="rec-box">
+            <strong>3. Ambient Temperature HVAC Optimization:</strong> Set thermostat baselines to 24°C when ambient temperature exceeds 30°C to curb excessive grid draw.
+        </div>
+
+        <div class="signature-block">
+            <div>
+                <p>Prepared by: <strong>Energy Analytics System</strong></p>
+                <p>Department of Electrical & Computer Engineering</p>
+            </div>
+            <div style="text-align: right;">
+                <p>Approved by: <strong>Campus Infrastructure Committee</strong></p>
+                <p>BIT Smart Campus Management</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('report-date').innerText = new Date().toLocaleDateString('en-IN', {
+            year: 'numeric', month: 'long', day: 'numeric'
+        });
+
+        fetch('/api/report-data')
+            .then(res => res.json())
+            .then(data => {
+                document.getElementById('rep-kwh').innerText = `${data.metrics.total_kwh.toLocaleString()} kWh`;
+                document.getElementById('rep-cost').innerText = `₹${data.metrics.cost_inr.toLocaleString()}`;
+                document.getElementById('rep-co2').innerText = `${data.metrics.co2_kg.toLocaleString()} kg`;
+                document.getElementById('rep-peak').innerText = `${data.metrics.peak_kw} kW`;
+
+                const tbody = document.getElementById('buildingTableBody');
+                tbody.innerHTML = data.buildings.map(b => `
+                    <tr>
+                        <td><strong>${b.name}</strong></td>
+                        <td>${b.kwh.toLocaleString()} kWh</td>
+                        <td>₹${b.cost.toLocaleString()}</td>
+                        <td>${b.co2.toLocaleString()} kg</td>
+                        <td><span style="color: #0284C7; font-weight: 600;">${b.peak_hour}</span></td>
+                        <td><span style="color: ${b.status === 'Normal' ? '#059669' : '#DC2626'}; font-weight: 600;">${b.status}</span></td>
+                    </tr>
+                `).join('');
+            })
+            .catch(err => console.error(err));
+    </script>
+</body>
+</html>

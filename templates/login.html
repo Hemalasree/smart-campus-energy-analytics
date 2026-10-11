@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - BIT Smart Campus Energy Analytics</title>
+    <!-- Google Fonts & FontAwesome -->
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Identity Services SDK -->
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="login-body">
+    <div class="login-container">
+        <div class="login-card">
+            <!-- Header Logo -->
+            <div class="login-header">
+                <div class="logo-icon"><i class="fa-solid fa-bolt-lightning"></i></div>
+                <h2>BIT Smart Campus ⚡</h2>
+                <p>Energy Consumption Analytics System</p>
+            </div>
+
+            <!-- Login Form -->
+            <form id="loginForm" onsubmit="handleLogin(event)">
+                <div class="form-group">
+                    <label for="login-id"><i class="fa-solid fa-envelope"></i> Email ID</label>
+                    <input type="email" id="login-id" class="form-control full-width-input" placeholder="e.g. admin@bit.edu.in" required value="admin@bit.edu.in">
+                </div>
+
+                <div class="form-group">
+                    <label for="login-password"><i class="fa-solid fa-lock"></i> Password</label>
+                    <input type="password" id="login-password" class="form-control full-width-input" placeholder="Enter password" required value="admin">
+                    
+                    <div class="show-password-row">
+                        <label class="checkbox-container">
+                            <input type="checkbox" id="show-pass-check" onchange="togglePasswordShow(this)">
+                            <span>Show Password</span>
+                        </label>
+                    </div>
+                </div>
+
+                <button type="submit" class="btn-primary btn-login">
+                    <i class="fa-solid fa-right-to-bracket"></i> Sign In to Dashboard
+                </button>
+
+                <div class="form-options">
+                    <label class="checkbox-container">
+                        <input type="checkbox" checked>
+                        <span>Remember Me</span>
+                    </label>
+                    <a href="#" class="forgot-link" onclick="alert('Demo Credentials: admin@bit.edu.in / admin'); return false;">Forgot Password?</a>
+                </div>
+            </form>
+
+            <div class="divider">
+                <span>OR SIGN IN WITH GOOGLE</span>
+            </div>
+
+            <!-- Official Single Google Sign-In Container -->
+            <div class="google-auth-container">
+                <div id="g_id_onload"
+                     data-client_id="893240294812-demo.apps.googleusercontent.com"
+                     data-context="signin"
+                     data-ux_mode="popup"
+                     data-callback="handleGoogleCredentialResponse"
+                     data-auto_prompt="false">
+                </div>
+                
+                <div class="g_id_signin" 
+                     data-type="standard" 
+                     data-shape="rectangular" 
+                     data-theme="outline" 
+                     data-text="signin_with" 
+                     data-size="large" 
+                     data-logo_alignment="left"
+                     data-width="364">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function togglePasswordShow(checkbox) {
+            const passInput = document.getElementById('login-password');
+            passInput.type = checkbox.checked ? 'text' : 'password';
+        }
+
+        async function handleLogin(e) {
+            e.preventDefault();
+            const loginId = document.getElementById('login-id').value;
+            const password = document.getElementById('login-password').value;
+
+            try {
+                const res = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ login_id: loginId, password: password })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    window.location.href = '/';
+                } else {
+                    alert(data.message || 'Invalid credentials');
+                }
+            } catch (err) {
+                window.location.href = '/';
+            }
+        }
+
+        function handleGoogleCredentialResponse(response) {
+            fetch('/api/google-auth', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ credential: response.credential })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    window.location.href = '/';
+                }
+            })
+            .catch(() => window.location.href = '/');
+        }
+    </script>
+</body>
+</html>
