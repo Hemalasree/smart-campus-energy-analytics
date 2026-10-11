@@ -7,6 +7,7 @@ A web-based intelligent energy monitoring, analytics, and predictive decision-su
 ## 🚀 Key Features
 
 - **Real-Time Monitoring**: Campus-wide total power consumption (kWh), peak load demand (kW), estimated expenditure (₹), and carbon emissions (kg CO₂).
+- **Rooftop Solar PV & Net-Metering**: Tracks 150 kWp campus solar array generation, peak midday offset (11:00 AM – 2:00 PM), clean energy share (%), and direct utility grid savings (₹).
 - **Predictive AI Modeling**: Scikit-Learn `RandomForestRegressor` models ambient outdoor weather as a causal driver of HVAC compressor load.
 - **Combined Forecast Visualization**: Historical actual consumption (solid line) merged into a 12-hour ML forecast (dashed line) on a single Chart.js graph.
 - **Academic Calendar-Aware Anomaly Detection**: Adjusts baselines for semester breaks and exams to eliminate false wastage alarms.
