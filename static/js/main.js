@@ -8,6 +8,7 @@ let buildingChart = null;
 let peakChart = null;
 let analyticsBuildingChart = null;
 let analyticsPeakChart = null;
+let solarOffsetChart = null;
 
 document.addEventListener('DOMContentLoaded', () => {
     initTheme();
@@ -116,6 +117,7 @@ async function fetchDashboardData() {
 
         if (response.ok) {
             updateKPICards(data.metrics);
+            if (data.solar) updateSolarUI(data.solar);
             renderCombinedTrendChart(data.combined_trend);
             renderBuildingChart(data.building_breakdown);
             renderPeakChart(data.peak_distribution);
@@ -253,6 +255,121 @@ function renderPeakChart(peakData) {
                 legend: { position: 'bottom', labels: { color: textColor, font: { size: 11 } } }
             },
             cutout: '70%'
+        }
+    });
+}
+
+// --- Rooftop Solar PV & Net-Metering Offset Visualization ---
+function updateSolarUI(solar) {
+    const elGen = document.getElementById('solar-metric-gen');
+    const elPeak = document.getElementById('solar-metric-peak');
+    const elSavings = document.getElementById('solar-metric-savings');
+    const elShare = document.getElementById('solar-metric-share');
+    const elCo2 = document.getElementById('solar-metric-co2');
+
+    if (elGen) elGen.innerHTML = `${solar.total_generated_kwh.toLocaleString()} <small>kWh</small>`;
+    if (elPeak) elPeak.innerText = `${solar.peak_generation_kw} kW`;
+    if (elSavings) elSavings.innerText = `₹${solar.cost_savings_inr.toLocaleString()}`;
+    if (elShare) elShare.innerText = `${solar.clean_energy_share}%`;
+    if (elCo2) elCo2.innerHTML = `${solar.co2_offset_kg.toLocaleString()} <small>kg</small>`;
+
+    renderSolarChart(solar);
+}
+
+function renderSolarChart(solar) {
+    const el = document.getElementById('solarOffsetChart');
+    if (!el) return;
+    const ctx = el.getContext('2d');
+
+    if (solarOffsetChart) solarOffsetChart.destroy();
+
+    const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+    const gridColor = isLight ? 'rgba(0, 0, 0, 0.06)' : 'rgba(255, 255, 255, 0.05)';
+    const textColor = isLight ? '#64748B' : '#94A3B8';
+
+    solarOffsetChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: solar.hourly_labels,
+            datasets: [
+                {
+                    label: '☀️ Rooftop Solar Generation (kWh)',
+                    data: solar.hourly_solar,
+                    borderColor: '#F59E0B',
+                    backgroundColor: 'rgba(245, 158, 11, 0.22)',
+                    fill: true,
+                    tension: 0.4,
+                    borderWidth: 2.5,
+                    pointRadius: 2,
+                    pointHoverRadius: 5
+                },
+                {
+                    label: '⚡ Gross Campus Demand (kWh)',
+                    data: solar.hourly_gross,
+                    borderColor: '#38BDF8',
+                    backgroundColor: 'transparent',
+                    fill: false,
+                    tension: 0.3,
+                    borderWidth: 2,
+                    pointRadius: 2,
+                    pointHoverRadius: 5
+                },
+                {
+                    label: '🔌 Net Grid Draw (Utility kWh)',
+                    data: solar.hourly_net_grid,
+                    borderColor: '#10B981',
+                    borderDash: [5, 4],
+                    backgroundColor: 'transparent',
+                    fill: false,
+                    tension: 0.3,
+                    borderWidth: 2,
+                    pointRadius: 2,
+                    pointHoverRadius: 5
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'top',
+                    labels: { color: textColor, boxWidth: 14, font: { family: 'Outfit', size: 12 } }
+                },
+                tooltip: {
+                    mode: 'index',
+                    intersect: false,
+                    callbacks: {
+                        footer: function(tooltipItems) {
+                            let solarVal = 0;
+                            let grossVal = 0;
+                            tooltipItems.forEach(function(tooltipItem) {
+                                if (tooltipItem.datasetIndex === 0) solarVal = tooltipItem.parsed.y;
+                                if (tooltipItem.datasetIndex === 1) grossVal = tooltipItem.parsed.y;
+                            });
+                            if (grossVal > 0) {
+                                const offsetPct = ((solarVal / grossVal) * 100).toFixed(1);
+                                return `Midday Solar Offset: ${offsetPct}%`;
+                            }
+                            return '';
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    grid: { color: gridColor },
+                    ticks: { color: textColor, font: { family: 'Outfit', size: 11 } }
+                },
+                y: {
+                    grid: { color: gridColor },
+                    ticks: {
+                        color: textColor,
+                        font: { family: 'Outfit', size: 11 },
+                        callback: val => `${val} kWh`
+                    }
+                }
+            }
         }
     });
 }

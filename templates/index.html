@@ -198,6 +198,48 @@
                         </div>
                     </div>
 
+                    <!-- Rooftop Solar PV Generation & Net-Metering Section -->
+                    <div class="panel-card solar-card" style="margin-top: 24px; margin-bottom: 24px;">
+                        <div class="card-header">
+                            <div>
+                                <h3><i class="fa-solid fa-solar-panel" style="color: #F59E0B;"></i> Rooftop Solar PV Generation & Net-Metering</h3>
+                                <span class="card-subtitle">150 kWp Campus Solar Array · Offsetting Peak Midday HVAC Load (11:00 AM – 2:00 PM)</span>
+                            </div>
+                            <span class="badge" style="background: rgba(245, 158, 11, 0.15); color: #F59E0B; border: 1px solid rgba(245, 158, 11, 0.3);">
+                                <i class="fa-solid fa-sun"></i> Clean Energy Active
+                            </span>
+                        </div>
+
+                        <!-- Solar KPI Summary Strip -->
+                        <div class="kpi-grid" style="margin-top: 14px; margin-bottom: 20px;">
+                            <div class="kpi-card" style="border-left: 4px solid #F59E0B;">
+                                <span class="kpi-label">Solar Power Generated</span>
+                                <h2 id="solar-metric-gen" style="color: #F59E0B;">-- <small>kWh</small></h2>
+                                <span class="kpi-subtext">Peak Generation: <strong id="solar-metric-peak">-- kW</strong></span>
+                            </div>
+                            <div class="kpi-card" style="border-left: 4px solid var(--success);">
+                                <span class="kpi-label">Direct Electricity Savings</span>
+                                <h2 id="solar-metric-savings" style="color: var(--success);">₹--</h2>
+                                <span class="kpi-subtext">Offsetting TANGEDCO Grid</span>
+                            </div>
+                            <div class="kpi-card" style="border-left: 4px solid var(--purple);">
+                                <span class="kpi-label">Clean Energy Share</span>
+                                <h2 id="solar-metric-share" style="color: var(--purple);">--%</h2>
+                                <span class="kpi-subtext">Of Total 24h Campus Demand</span>
+                            </div>
+                            <div class="kpi-card" style="border-left: 4px solid var(--primary);">
+                                <span class="kpi-label">CO₂ Emissions Avoided</span>
+                                <h2 id="solar-metric-co2" style="color: var(--primary);">-- <small>kg</small></h2>
+                                <span class="kpi-subtext">Renewable Green Offset</span>
+                            </div>
+                        </div>
+
+                        <!-- Solar vs Gross Demand Chart -->
+                        <div class="chart-container large" style="height: 310px;">
+                            <canvas id="solarOffsetChart"></canvas>
+                        </div>
+                    </div>
+
                     <div class="split-grid">
                         <div class="panel-card">
                             <div class="card-header">

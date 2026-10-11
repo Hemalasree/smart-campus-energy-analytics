@@ -589,6 +589,49 @@ def get_dashboard_data():
         idx = peak_hours_df.groupby('building_name')['consumption_kwh'].idxmax()
         building_peaks = peak_hours_df.loc[idx].to_dict(orient='records')
 
+        # --- Rooftop Solar PV Generation & Net-Metering Model ---
+        # 150 kWp Installed Solar Array with realistic solar bell irradiance curve
+        solar_capacity_kw = 150.0
+        hourly_solar = []
+        hourly_net_grid = []
+
+        for lbl, actual in zip(actual_labels, actual_values):
+            try:
+                h = int(lbl.split(':')[0])
+            except Exception:
+                h = 12
+            if 6 <= h <= 18:
+                # Solar bell curve peaking at midday (11:00 - 14:00) with 85% PR
+                sun_angle = (h - 6) / 12.0 * np.pi
+                solar_gen = solar_capacity_kw * (np.sin(sun_angle) ** 1.8) * 0.85
+                solar_gen = max(0.0, round(float(solar_gen), 1))
+            else:
+                solar_gen = 0.0
+
+            hourly_solar.append(solar_gen)
+            net_draw = max(0.0, round(actual - solar_gen, 1))
+            hourly_net_grid.append(net_draw)
+
+        total_solar_kwh = round(float(sum(hourly_solar)), 1)
+        solar_savings_inr = round(float(total_solar_kwh * tariff_rate), 2)
+        solar_co2_kg = round(float(total_solar_kwh * co2_factor), 1)
+        gross_24h_demand = sum(actual_values) if sum(actual_values) > 0 else 1.0
+        clean_energy_share = round(min(100.0, (total_solar_kwh / gross_24h_demand) * 100), 1)
+        peak_solar_kw = round(float(max(hourly_solar)), 1) if hourly_solar else 0.0
+
+        solar_analytics = {
+            'installed_capacity_kw': solar_capacity_kw,
+            'total_generated_kwh': total_solar_kwh,
+            'cost_savings_inr': solar_savings_inr,
+            'co2_offset_kg': solar_co2_kg,
+            'clean_energy_share': clean_energy_share,
+            'peak_generation_kw': peak_solar_kw,
+            'hourly_labels': actual_labels,
+            'hourly_solar': hourly_solar,
+            'hourly_gross': actual_values,
+            'hourly_net_grid': hourly_net_grid
+        }
+
         return jsonify({
             'metrics': {
                 'total_kwh': total_kwh,
@@ -600,6 +643,7 @@ def get_dashboard_data():
                 'sustainability_score': 88,
                 'tariff_rate': tariff_rate
             },
+            'solar': solar_analytics,
             'combined_trend': {
                 'labels': combined_labels,
                 'actuals': combined_actuals,
