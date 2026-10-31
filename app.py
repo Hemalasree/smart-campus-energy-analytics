@@ -436,11 +436,15 @@ def api_login():
 
 @app.route('/api/google-auth', methods=['POST'])
 def google_auth():
+    data = request.get_json() or {}
+    email = data.get('email', 'admin@campus.edu')
+    name = data.get('name', 'Campus Admin (Google Account)')
+    role = 'Admin' if 'admin' in email.lower() or 'admin' in name.lower() else 'Viewer'
     session['user'] = {
-        'username': 'admin',
-        'email': 'admin@campus.edu',
-        'name': 'Campus Admin (Google Account)',
-        'role': 'Admin',
+        'username': email.split('@')[0] if '@' in email else 'admin',
+        'email': email,
+        'name': name,
+        'role': role,
         'auth_type': 'google'
     }
     return jsonify({'success': True})
