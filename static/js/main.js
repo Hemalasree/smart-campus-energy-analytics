@@ -16,10 +16,12 @@ document.addEventListener('DOMContentLoaded', () => {
     syncLiveTemperature();
     runSimulation();
     loadRecommendations();
+    loadAlerts();
 
-    // Silently poll live recommendations and counters every 45s
+    // Silently poll live recommendations, alerts, and counters every 45s
     setInterval(() => {
         loadRecommendations(false);
+        loadAlerts(false);
     }, 45000);
 });
 
@@ -37,6 +39,7 @@ function switchView(viewName) {
     // Trigger data refresh on view switch
     if (viewName === 'analytics') {
         fetchDashboardData();
+        loadAlerts();
     } else if (viewName === 'profile') {
         loadUserProfile();
     } else if (viewName === 'users') {
@@ -1419,5 +1422,152 @@ async function submitCustomRec(event) {
             btn.disabled = false;
             btn.innerHTML = origHtml;
         }
+    }
+}
+
+
+// =========================================================================
+// Upgrade 4: Automated Threshold Alerts & Incident Management Engine
+// =========================================================================
+let allAlerts = [];
+let activeAlertFilter = 'active';
+
+async function loadAlerts(isManual = false) {
+    const refreshIcon = document.getElementById('refreshAlertsIcon');
+    if (isManual && refreshIcon) refreshIcon.classList.add('fa-spin');
+
+    try {
+        const res = await fetch('/api/alerts');
+        const data = await res.json();
+
+        if (data.success) {
+            allAlerts = data.alerts || [];
+            const summary = data.summary || {};
+
+            const countBadge = document.getElementById('alertsActiveCount');
+            if (countBadge) countBadge.innerText = summary.active_count || 0;
+
+            const pill = document.getElementById('activeAlertsBadge');
+            if (pill) {
+                if (summary.active_count > 0) {
+                    pill.style.background = 'rgba(239, 68, 68, 0.15)';
+                    pill.style.color = '#EF4444';
+                    pill.style.borderColor = 'rgba(239, 68, 68, 0.3)';
+                } else {
+                    pill.style.background = 'rgba(16, 185, 129, 0.12)';
+                    pill.style.color = '#10B981';
+                    pill.style.borderColor = 'rgba(16, 185, 129, 0.25)';
+                }
+            }
+
+            renderAlerts();
+        }
+    } catch (err) {
+        console.error('Failed to load alerts:', err);
+    } finally {
+        if (isManual && refreshIcon) {
+            setTimeout(() => refreshIcon.classList.remove('fa-spin'), 350);
+        }
+    }
+}
+
+function filterAlerts(status) {
+    activeAlertFilter = status;
+
+    const btnAll = document.getElementById('btnAlertAll');
+    const btnActive = document.getElementById('btnAlertActive');
+    const btnAck = document.getElementById('btnAlertAck');
+
+    if (btnAll) btnAll.style.background = (status === 'all') ? 'rgba(59, 130, 246, 0.2)' : '';
+    if (btnActive) btnActive.style.background = (status === 'active') ? 'rgba(239, 68, 68, 0.2)' : '';
+    if (btnAck) btnAck.style.background = (status === 'acknowledged') ? 'rgba(16, 185, 129, 0.2)' : '';
+
+    renderAlerts();
+}
+
+function renderAlerts() {
+    const container = document.getElementById('alertsLogContainer');
+    if (!container) return;
+
+    const filtered = allAlerts.filter(a => {
+        if (activeAlertFilter === 'active') return a.status === 'active';
+        if (activeAlertFilter === 'acknowledged') return a.status !== 'active';
+        return true;
+    });
+
+    if (filtered.length === 0) {
+        container.innerHTML = `
+            <div style="text-align: center; padding: 24px; color: var(--text-muted); font-size: 0.9rem;">
+                <i class="fa-solid fa-circle-check" style="color: var(--success); font-size: 1.8rem; margin-bottom: 8px;"></i>
+                <p style="margin: 0;">No ${activeAlertFilter === 'active' ? 'active' : ''} threshold alerts logged. Grid parameters operating within nominal bounds.</p>
+            </div>
+        `;
+        return;
+    }
+
+    container.innerHTML = filtered.map(a => {
+        const sev = (a.severity || 'warning').toLowerCase();
+        const stat = (a.status || 'active').toLowerCase();
+        const isResolved = (stat === 'resolved');
+
+        let sevIcon = 'fa-solid fa-triangle-exclamation';
+        if (sev === 'critical') sevIcon = 'fa-solid fa-circle-radiation';
+        else if (sev === 'info') sevIcon = 'fa-solid fa-circle-info';
+
+        return `
+            <div class="alert-log-item sev-${sev} ${isResolved ? 'status-resolved-card' : ''}" id="alert-card-${a.alert_id}">
+                <div style="flex: 1;">
+                    <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 6px; flex-wrap: wrap;">
+                        <span class="alert-badge badge-${sev}">
+                            <i class="${sevIcon}"></i> ${sev.toUpperCase()}
+                        </span>
+                        <span style="font-size: 0.82rem; font-weight: 700; color: var(--text);">
+                            <i class="fa-solid fa-building"></i> ${a.building_name} (${a.building_code})
+                        </span>
+                        <span style="font-size: 0.75rem; color: var(--text-muted);">
+                            <i class="fa-solid fa-clock"></i> ${a.created_at}
+                        </span>
+                    </div>
+                    <p style="margin: 0; font-size: 0.88rem; color: var(--text-muted); line-height: 1.4;">
+                        ${a.message}
+                    </p>
+                    <div style="margin-top: 6px; font-size: 0.78rem; color: var(--text-muted); display: flex; gap: 14px;">
+                        <span>Breach Value: <strong style="color: var(--text);">${a.metric_value}</strong></span>
+                        <span>Threshold: <strong style="color: var(--text);">${a.threshold_value}</strong></span>
+                        <span>Dispatched via: <strong>${a.dispatched_via}</strong></span>
+                    </div>
+                </div>
+
+                <div style="display: flex; gap: 8px; align-items: center;">
+                    ${stat === 'active' ? `
+                        <button class="btn btn-secondary btn-sm" onclick="acknowledgeAlert(${a.alert_id}, 'acknowledged')" title="Mark alert as acknowledged">
+                            <i class="fa-solid fa-check"></i> Acknowledge
+                        </button>
+                    ` : `
+                        <span style="font-size: 0.78rem; color: var(--success); font-weight: 600; display: inline-flex; align-items: center; gap: 4px;">
+                            <i class="fa-solid fa-check-double"></i> ${stat.toUpperCase()}
+                        </span>
+                    `}
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+async function acknowledgeAlert(alertId, newStatus = 'acknowledged') {
+    try {
+        const res = await fetch('/api/alerts/acknowledge', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ alert_id: alertId, status: newStatus })
+        });
+        const data = await res.json();
+        if (data.success) {
+            await loadAlerts(false);
+        } else {
+            alert('Could not acknowledge alert: ' + (data.error || 'Server error'));
+        }
+    } catch (err) {
+        alert('Network error acknowledging alert: ' + err.message);
     }
 }

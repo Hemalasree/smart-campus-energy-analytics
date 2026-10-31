@@ -928,4 +928,69 @@ body {
     50% { opacity: 0.4; transform: scale(0.85); }
 }
 
+/* Automated Threshold Alert Log Styles (Upgrade 4) */
+.alert-log-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: var(--input-bg);
+    border: 1px solid var(--card-border);
+    border-radius: var(--radius);
+    padding: 14px 18px;
+    gap: 16px;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.alert-log-item:hover {
+    box-shadow: var(--shadow-sm);
+    transform: translateY(-1px);
+}
+
+.alert-log-item.sev-critical {
+    border-left: 5px solid #EF4444;
+}
+
+.alert-log-item.sev-warning {
+    border-left: 5px solid #F59E0B;
+}
+
+.alert-log-item.sev-info {
+    border-left: 5px solid #3B82F6;
+}
+
+.alert-log-item.status-resolved-card {
+    opacity: 0.75;
+    border-left: 5px solid var(--text-muted);
+}
+
+.alert-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 10px;
+    border-radius: 16px;
+    font-size: 0.74rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+}
+
+.alert-badge.badge-critical {
+    background: rgba(239, 68, 68, 0.15);
+    color: #EF4444;
+    border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.alert-badge.badge-warning {
+    background: rgba(245, 158, 11, 0.15);
+    color: #F59E0B;
+    border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.alert-badge.badge-info {
+    background: rgba(59, 130, 246, 0.15);
+    color: #3B82F6;
+    border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
 .footer { text-align: center; color: var(--text-muted); font-size: 12px; padding: 20px 0; }

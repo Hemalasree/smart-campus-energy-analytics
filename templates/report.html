@@ -127,15 +127,26 @@
             color: #64748B;
         }
         @media print {
-            .print-btn { display: none; }
-            body { padding: 0; background: #FFF; }
-            .report-card { box-shadow: none; border: none; padding: 0; }
+            .no-print, .print-btn, .export-btn { display: none !important; }
+            body { padding: 0; background: #FFF; font-size: 11pt; }
+            .report-card { box-shadow: none; border: none; padding: 0; max-width: 100%; }
+            table { page-break-inside: auto; }
+            tr { page-break-inside: avoid; page-break-after: auto; }
+            thead { display: table-header-group; }
+            tfoot { display: table-footer-group; }
+            .signature-block { page-break-inside: avoid; margin-top: 40px; }
+            @page { size: A4; margin: 15mm 12mm 15mm 12mm; }
         }
     </style>
 </head>
 <body>
-    <div style="max-width: 900px; margin: 0 auto;">
-        <button class="print-btn" onclick="window.print()"><i class="fa-solid fa-print"></i> Print / Save as PDF</button>
+    <div class="no-print" style="max-width: 900px; margin: 0 auto 20px auto; display: flex; justify-content: flex-end; gap: 12px;">
+        <a href="/api/export/excel" class="print-btn" style="background: #10B981; text-decoration: none; display: inline-flex; align-items: center; gap: 8px;">
+            <i class="fa-solid fa-file-excel"></i> Export Audit Spreadsheet (.csv)
+        </a>
+        <button class="print-btn" onclick="window.print()" style="display: inline-flex; align-items: center; gap: 8px;">
+            <i class="fa-solid fa-file-pdf"></i> Save / Print PDF
+        </button>
     </div>
 
     <div class="report-card">

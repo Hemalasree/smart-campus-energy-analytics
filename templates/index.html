@@ -62,6 +62,10 @@
                     <span class="notif-badge" id="top-notif-badge">3</span>
                 </div>
 
+                <a href="/api/export/excel" class="btn-report" style="background: rgba(16, 185, 129, 0.15); color: #10B981; border: 1px solid rgba(16, 185, 129, 0.3); text-decoration: none;" title="Download Full Campus Energy Audit Spreadsheet (.csv)">
+                    <i class="fa-solid fa-file-excel"></i> Export
+                </a>
+
                 <button class="btn-report" onclick="window.open('/report', '_blank')" title="Print Executive Summary Report">
                     <i class="fa-solid fa-file-pdf"></i> Report
                 </button>
@@ -330,24 +334,33 @@
                         </div>
                     </div>
 
-                    <div class="panel-card">
-                        <div class="card-header">
-                            <h3><i class="fa-solid fa-shield-cat"></i> Academic Calendar Anomaly Register</h3>
-                            <span class="badge">Audit Trail</span>
+                    <!-- Automated Threshold Alerts & Dispatch Log Section (Upgrade 4) -->
+                    <div class="panel-card" style="margin-top: 20px; border-top: 3px solid #EF4444;">
+                        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                            <div>
+                                <h3 style="margin: 0; display: flex; align-items: center; gap: 8px;">
+                                    <i class="fa-solid fa-triangle-exclamation" style="color: #EF4444;"></i> 
+                                    Automated Threshold Alerts & Incident Log
+                                </h3>
+                                <span class="card-subtitle">Real-time anomaly breaches, voltage sags, and off-peak idle surge notifications dispatched via system engine</span>
+                            </div>
+                            <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                                <span class="badge" id="activeAlertsBadge" style="background: rgba(239, 68, 68, 0.15); color: #EF4444; border: 1px solid rgba(239, 68, 68, 0.3);">
+                                    <i class="fa-solid fa-bell"></i> <strong id="alertsActiveCount">--</strong> Active Incidents
+                                </span>
+                                <div style="display: flex; gap: 4px;">
+                                    <button type="button" class="btn btn-secondary btn-sm" onclick="filterAlerts('all')" id="btnAlertAll">All</button>
+                                    <button type="button" class="btn btn-secondary btn-sm" onclick="filterAlerts('active')" id="btnAlertActive" style="background: rgba(239, 68, 68, 0.15); color: #EF4444;">Active</button>
+                                    <button type="button" class="btn btn-secondary btn-sm" onclick="filterAlerts('acknowledged')" id="btnAlertAck">Acknowledged</button>
+                                </div>
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="loadAlerts(true)" title="Refresh alerts">
+                                    <i class="fa-solid fa-arrows-rotate" id="refreshAlertsIcon"></i>
+                                </button>
+                            </div>
                         </div>
-                        <div id="analyticsAnomalyTableContainer">
-                            <table class="user-table">
-                                <thead>
-                                    <tr>
-                                        <th>Building</th>
-                                        <th>Anomaly Type</th>
-                                        <th>Detection Message</th>
-                                        <th>Status</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="analyticsAnomalyTableBody">
-                                </tbody>
-                            </table>
+
+                        <div id="alertsLogContainer" style="display: flex; flex-direction: column; gap: 10px; margin-top: 14px;">
+                            <div class="loading-spinner"><i class="fa-solid fa-circle-notch fa-spin"></i> Checking real-time threshold logs...</div>
                         </div>
                     </div>
                 </div>
