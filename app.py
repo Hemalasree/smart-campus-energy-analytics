@@ -113,9 +113,14 @@ def init_db():
             CREATE TABLE IF NOT EXISTS users (
                 user_id INTEGER PRIMARY KEY AUTOINCREMENT,
                 username TEXT NOT NULL UNIQUE,
+                full_name TEXT DEFAULT 'Campus User',
                 email TEXT NOT NULL UNIQUE,
                 password_hash TEXT NOT NULL,
                 role TEXT NOT NULL DEFAULT 'viewer',
+                department TEXT DEFAULT 'Department of Infrastructure & Energy Systems',
+                phone TEXT DEFAULT '+91 98765 43210',
+                auth_type TEXT DEFAULT 'database',
+                last_login TEXT DEFAULT CURRENT_TIMESTAMP,
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP
             )
         ''')
@@ -190,9 +195,14 @@ def init_db():
             CREATE TABLE IF NOT EXISTS users (
                 user_id INT AUTO_INCREMENT PRIMARY KEY,
                 username VARCHAR(80) NOT NULL UNIQUE,
+                full_name VARCHAR(120) DEFAULT 'Campus User',
                 email VARCHAR(120) NOT NULL UNIQUE,
                 password_hash VARCHAR(255) NOT NULL,
                 role ENUM('admin', 'viewer') NOT NULL DEFAULT 'viewer',
+                department VARCHAR(120) DEFAULT 'Department of Infrastructure & Energy Systems',
+                phone VARCHAR(30) DEFAULT '+91 98765 43210',
+                auth_type VARCHAR(30) DEFAULT 'database',
+                last_login DATETIME DEFAULT CURRENT_TIMESTAMP,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         ''')
@@ -280,6 +290,45 @@ def init_db():
     cursor.execute("SELECT COUNT(*) FROM energy_readings")
     if cursor.fetchone()[0] < 100:
         generate_sample_energy_data(conn, db_type)
+
+    # Ensure user profile columns exist & seed complete default profiles
+    try:
+        if db_type == "sqlite":
+            cursor.execute("PRAGMA table_info(users)")
+            existing_cols = [col[1] for col in cursor.fetchall()]
+            if 'full_name' not in existing_cols:
+                cursor.execute("ALTER TABLE users ADD COLUMN full_name TEXT DEFAULT 'Campus User'")
+            if 'department' not in existing_cols:
+                cursor.execute("ALTER TABLE users ADD COLUMN department TEXT DEFAULT 'Department of Infrastructure & Energy Systems'")
+            if 'phone' not in existing_cols:
+                cursor.execute("ALTER TABLE users ADD COLUMN phone TEXT DEFAULT '+91 98765 43210'")
+            if 'auth_type' not in existing_cols:
+                cursor.execute("ALTER TABLE users ADD COLUMN auth_type TEXT DEFAULT 'database'")
+            if 'last_login' not in existing_cols:
+                cursor.execute("ALTER TABLE users ADD COLUMN last_login TEXT DEFAULT CURRENT_TIMESTAMP")
+            conn.commit()
+        else:
+            for col_def in [
+                ("full_name", "VARCHAR(120) DEFAULT 'Campus User'"),
+                ("department", "VARCHAR(120) DEFAULT 'Department of Infrastructure & Energy Systems'"),
+                ("phone", "VARCHAR(30) DEFAULT '+91 98765 43210'"),
+                ("auth_type", "VARCHAR(30) DEFAULT 'database'"),
+                ("last_login", "DATETIME DEFAULT CURRENT_TIMESTAMP")
+            ]:
+                try:
+                    cursor.execute(f"ALTER TABLE users ADD COLUMN {col_def[0]} {col_def[1]}")
+                except Exception:
+                    pass
+            conn.commit()
+
+        # Update default accounts with executive profile details
+        cursor.execute("UPDATE users SET full_name = 'Campus Administrator', department = 'Department of Infrastructure & Energy Systems', phone = '+91 98765 43210', auth_type = 'database' WHERE username = 'admin' AND (full_name IS NULL OR full_name = 'Campus User' OR full_name = '')")
+        cursor.execute("UPDATE users SET full_name = 'Faculty Reviewer', department = 'Department of Electrical & Computer Engineering', phone = '+91 91234 56789', auth_type = 'database' WHERE username = 'viewer' AND (full_name IS NULL OR full_name = 'Campus User' OR full_name = '')")
+        cursor.execute("UPDATE users SET email = 'admin@campus.edu' WHERE username = 'admin' AND email LIKE '%@bit.edu.in'")
+        cursor.execute("UPDATE users SET email = 'viewer@campus.edu' WHERE username = 'viewer' AND email LIKE '%@bit.edu.in'")
+        conn.commit()
+    except Exception as e:
+        print(f"[User Schema Migration Warning] {e}")
 
     conn.close()
 
@@ -404,32 +453,88 @@ def api_login():
     try:
         conn, db_type = get_db_connection()
         cursor = conn.cursor()
-        query = "SELECT username, email, role FROM users WHERE (email = ? OR username = ?) AND password_hash = ?" if db_type == "sqlite" else "SELECT username, email, role FROM users WHERE (email = %s OR username = %s) AND password_hash = %s"
+        query = """
+            SELECT user_id, username, full_name, email, role, department, phone, auth_type, created_at 
+            FROM users 
+            WHERE (email = ? OR username = ?) AND password_hash = ?
+        """ if db_type == "sqlite" else """
+            SELECT user_id, username, full_name, email, role, department, phone, auth_type, created_at 
+            FROM users 
+            WHERE (email = %s OR username = %s) AND password_hash = %s
+        """
         cursor.execute(query, (login_id, login_id, password))
         user_row = cursor.fetchone()
-        conn.close()
 
         if user_row:
+            user_id = user_row[0]
+            # Update last login timestamp in database
+            cursor.execute("UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE user_id = ?" if db_type == "sqlite" else "UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE user_id = %s", (user_id,))
+            conn.commit()
+            conn.close()
+
+            role_title = 'Admin' if user_row[4] and user_row[4].lower() == 'admin' else 'Viewer'
             session['user'] = {
-                'username': user_row[0],
-                'email': user_row[1],
-                'name': 'Campus Administrator' if user_row[2] == 'admin' else 'Faculty Viewer',
-                'role': 'Admin' if user_row[2] == 'admin' else 'Viewer',
-                'auth_type': 'database'
+                'user_id': user_id,
+                'username': user_row[1],
+                'name': user_row[2] or ('Campus Administrator' if role_title == 'Admin' else 'Faculty Reviewer'),
+                'email': user_row[3],
+                'role': role_title,
+                'department': user_row[5] or 'Department of Infrastructure & Energy Systems',
+                'phone': user_row[6] or '+91 98765 43210',
+                'auth_type': user_row[7] or 'database',
+                'created_at': str(user_row[8]) if user_row[8] else '2026-08-28 10:22:37'
             }
             return jsonify({'success': True, 'message': 'Login successful'})
+        conn.close()
     except Exception as e:
         print(f"[Login DB Error] {e}")
 
-    # Fallback default demo login
+    # Fallback default demo login (upserts into database)
     if login_id and password:
         role = 'Admin' if 'admin' in login_id.lower() else 'Viewer'
+        email = login_id if '@' in login_id else f"{login_id}@campus.edu"
+        username = login_id.split('@')[0]
+        full_name = f"Campus {role}"
+        
+        try:
+            conn, db_type = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT user_id, username, full_name, email, role, department, phone, auth_type, created_at FROM users WHERE email = ? OR username = ?" if db_type == "sqlite" else "SELECT user_id, username, full_name, email, role, department, phone, auth_type, created_at FROM users WHERE email = %s OR username = %s", (email, username))
+            existing = cursor.fetchone()
+            if existing:
+                user_id = existing[0]
+                cursor.execute("UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE user_id = ?" if db_type == "sqlite" else "UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE user_id = %s", (user_id,))
+                conn.commit()
+                full_name = existing[2] or full_name
+                dept = existing[5] or 'Department of Infrastructure & Energy Systems'
+                phn = existing[6] or '+91 98765 43210'
+                c_at = str(existing[8]) if existing[8] else '2026-08-28 10:22:37'
+            else:
+                ph = "(?,?,?,?,?,?,?,?)" if db_type == "sqlite" else "(%s,%s,%s,%s,%s,%s,%s,%s)"
+                cursor.execute(f"INSERT INTO users (username, full_name, email, password_hash, role, department, phone, auth_type) VALUES {ph}",
+                               (username, full_name, email, password, role.lower(), 'Department of Infrastructure & Energy Systems', '+91 98765 43210', 'standard'))
+                conn.commit()
+                user_id = cursor.lastrowid
+                dept = 'Department of Infrastructure & Energy Systems'
+                phn = '+91 98765 43210'
+                c_at = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            conn.close()
+        except Exception:
+            user_id = 1
+            dept = 'Department of Infrastructure & Energy Systems'
+            phn = '+91 98765 43210'
+            c_at = '2026-08-28 10:22:37'
+
         session['user'] = {
-            'username': login_id,
-            'email': login_id if '@' in login_id else f"{login_id}@campus.edu",
-            'name': f"Campus {role}",
+            'user_id': user_id,
+            'username': username,
+            'email': email,
+            'name': full_name,
             'role': role,
-            'auth_type': 'standard'
+            'department': dept,
+            'phone': phn,
+            'auth_type': 'standard',
+            'created_at': c_at
         }
         return jsonify({'success': True, 'message': 'Login successful'})
     return jsonify({'success': False, 'message': 'Invalid credentials'}), 400
@@ -440,14 +545,294 @@ def google_auth():
     email = data.get('email', 'admin@campus.edu')
     name = data.get('name', 'Campus Admin (Google Account)')
     role = 'Admin' if 'admin' in email.lower() or 'admin' in name.lower() else 'Viewer'
+    username = email.split('@')[0] if '@' in email else 'admin'
+
+    try:
+        conn, db_type = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT user_id, username, full_name, email, role, department, phone, created_at FROM users WHERE email = ? OR username = ?" if db_type == "sqlite" else "SELECT user_id, username, full_name, email, role, department, phone, created_at FROM users WHERE email = %s OR username = %s", (email, username))
+        existing = cursor.fetchone()
+        if existing:
+            user_id = existing[0]
+            cursor.execute("UPDATE users SET last_login = CURRENT_TIMESTAMP, auth_type = 'google' WHERE user_id = ?" if db_type == "sqlite" else "UPDATE users SET last_login = CURRENT_TIMESTAMP, auth_type = 'google' WHERE user_id = %s", (user_id,))
+            conn.commit()
+            u_name = existing[2] or name
+            dept = existing[5] or 'Campus Infrastructure & Energy Management'
+            phn = existing[6] or '+91 98765 43210'
+            c_at = str(existing[7]) if existing[7] else '2026-08-28 10:22:37'
+        else:
+            ph = "(?,?,?,?,?,?,?,?)" if db_type == "sqlite" else "(%s,%s,%s,%s,%s,%s,%s,%s)"
+            cursor.execute(f"INSERT INTO users (username, full_name, email, password_hash, role, department, phone, auth_type) VALUES {ph}",
+                           (username, name, email, 'google_sso_verified', role.lower(), 'Campus Infrastructure & Energy Management', '+91 98765 43210', 'google'))
+            conn.commit()
+            user_id = cursor.lastrowid
+            u_name = name
+            dept = 'Campus Infrastructure & Energy Management'
+            phn = '+91 98765 43210'
+            c_at = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        conn.close()
+    except Exception as e:
+        print(f"[Google Auth DB Error] {e}")
+        user_id = 1
+        u_name = name
+        dept = 'Campus Infrastructure & Energy Management'
+        phn = '+91 98765 43210'
+        c_at = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
     session['user'] = {
-        'username': email.split('@')[0] if '@' in email else 'admin',
+        'user_id': user_id,
+        'username': username,
         'email': email,
-        'name': name,
+        'name': u_name,
         'role': role,
-        'auth_type': 'google'
+        'department': dept,
+        'phone': phn,
+        'auth_type': 'google',
+        'created_at': c_at
     }
     return jsonify({'success': True})
+
+# --- User Profile & Authorization Management APIs ---
+@app.route('/api/user/profile', methods=['GET'])
+def get_user_profile():
+    if 'user' not in session:
+        return jsonify({'success': False, 'error': 'Unauthorized'}), 401
+
+    sess = session['user']
+    user_id = sess.get('user_id')
+    email = sess.get('email')
+    username = sess.get('username')
+
+    try:
+        conn, db_type = get_db_connection()
+        cursor = conn.cursor()
+        q = """
+            SELECT user_id, username, full_name, email, role, department, phone, auth_type, created_at, last_login 
+            FROM users 
+            WHERE user_id = ? OR email = ? OR username = ?
+        """ if db_type == "sqlite" else """
+            SELECT user_id, username, full_name, email, role, department, phone, auth_type, created_at, last_login 
+            FROM users 
+            WHERE user_id = %s OR email = %s OR username = %s
+        """
+        cursor.execute(q, (user_id, email, username))
+        row = cursor.fetchone()
+        conn.close()
+
+        if row:
+            role_title = 'Admin' if row[4] and row[4].lower() == 'admin' else 'Viewer'
+            user_profile = {
+                'user_id': row[0],
+                'username': row[1],
+                'full_name': row[2] or sess.get('name', 'Campus User'),
+                'email': row[3],
+                'role': role_title,
+                'department': row[5] or 'Department of Infrastructure & Energy Systems',
+                'phone': row[6] or '+91 98765 43210',
+                'auth_type': row[7] or sess.get('auth_type', 'database'),
+                'created_at': str(row[8]) if row[8] else '2026-08-28 10:22:37',
+                'last_login': str(row[9]) if row[9] else datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            }
+        else:
+            role_title = sess.get('role', 'Admin')
+            user_profile = {
+                'user_id': user_id or 1,
+                'username': username or 'admin',
+                'full_name': sess.get('name', 'Campus Administrator'),
+                'email': email or 'admin@campus.edu',
+                'role': role_title,
+                'department': sess.get('department', 'Department of Infrastructure & Energy Systems'),
+                'phone': sess.get('phone', '+91 98765 43210'),
+                'auth_type': sess.get('auth_type', 'database'),
+                'created_at': '2026-08-28 10:22:37',
+                'last_login': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            }
+    except Exception as e:
+        print(f"[Profile Query Warning] {e}")
+        role_title = sess.get('role', 'Admin')
+        user_profile = {
+            'user_id': user_id or 1,
+            'username': username or 'admin',
+            'full_name': sess.get('name', 'Campus Administrator'),
+            'email': email or 'admin@campus.edu',
+            'role': role_title,
+            'department': 'Department of Infrastructure & Energy Systems',
+            'phone': '+91 98765 43210',
+            'auth_type': sess.get('auth_type', 'database'),
+            'created_at': '2026-08-28 10:22:37',
+            'last_login': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        }
+
+    is_admin = (user_profile['role'] == 'Admin')
+    authorization = {
+        'role': user_profile['role'],
+        'access_level': 'Tier-1 Campus Executive & System Administrator' if is_admin else 'Tier-2 Read-Only Institutional Viewer',
+        'badge_class': 'admin' if is_admin else 'viewer',
+        'permissions': [
+            {'name': 'Real-Time Telemetry & KPI Monitoring', 'desc': 'Access to active power (kWh), voltage, peak kW, and building status', 'granted': True},
+            {'name': 'Predictive ML Load Forecasting', 'desc': 'Execute 12-hour and multi-day Scikit-Learn Random Forest simulations', 'granted': True},
+            {'name': 'BEE 5-Star & EUI Benchmarking Leaderboard', 'desc': 'Inspect building Energy Use Intensity and national green compliance metrics', 'granted': True},
+            {'name': 'Rooftop Solar PV Net-Metering Offset', 'desc': 'Analyze 150 kWp solar irradiance offset, clean energy share, and grid draw', 'granted': True},
+            {'name': 'Executive Sustainability PDF Report Generation', 'desc': 'Compile, preview, and print official institutional audit reports', 'granted': True},
+            {'name': 'Universal CSV Dataset Ingestion', 'desc': 'Upload external smart meter readings and trigger automatic model retraining', 'granted': is_admin},
+            {'name': 'Tariff Rates & Emission Factors Management', 'desc': 'Modify baseline utility rate (₹/kWh) and CO₂ emission factor values', 'granted': is_admin},
+            {'name': 'Building Benchmark Baselines Calibration', 'desc': 'Configure baseline benchmark load ratings across all campus blocks', 'granted': is_admin},
+            {'name': 'User Profile & Security Modification', 'desc': 'Update contact information, department, email, and authentication passwords', 'granted': True}
+        ]
+    }
+
+    return jsonify({'success': True, 'user': user_profile, 'authorization': authorization})
+
+@app.route('/api/user/profile', methods=['POST'])
+def update_user_profile():
+    if 'user' not in session:
+        return jsonify({'success': False, 'error': 'Unauthorized'}), 401
+
+    data = request.get_json() or {}
+    full_name = data.get('full_name', '').strip()
+    email = data.get('email', '').strip()
+    department = data.get('department', '').strip()
+    phone = data.get('phone', '').strip()
+    current_password = data.get('current_password', '').strip()
+    new_password = data.get('new_password', '').strip()
+
+    if not full_name or not email:
+        return jsonify({'success': False, 'error': 'Full name and email are mandatory fields.'}), 400
+
+    sess = session['user']
+    user_id = sess.get('user_id')
+    curr_email = sess.get('email')
+    curr_username = sess.get('username')
+
+    try:
+        conn, db_type = get_db_connection()
+        cursor = conn.cursor()
+
+        # Check uniqueness of email against other users
+        q_chk = "SELECT user_id FROM users WHERE email = ? AND user_id != ?" if db_type == "sqlite" else "SELECT user_id FROM users WHERE email = %s AND user_id != %s"
+        cursor.execute(q_chk, (email, user_id or -1))
+        if cursor.fetchone():
+            conn.close()
+            return jsonify({'success': False, 'error': f"The email '{email}' is already registered to another campus account."}), 400
+
+        # Optional password update verification
+        if new_password:
+            q_pass = "SELECT password_hash FROM users WHERE user_id = ? OR email = ?" if db_type == "sqlite" else "SELECT password_hash FROM users WHERE user_id = %s OR email = %s"
+            cursor.execute(q_pass, (user_id, curr_email))
+            pwd_row = cursor.fetchone()
+            if pwd_row and pwd_row[0] not in ('google_sso_verified', 'google_oauth_verified'):
+                if current_password != pwd_row[0]:
+                    conn.close()
+                    return jsonify({'success': False, 'error': 'Current password verification failed. Please enter your valid current password.'}), 400
+
+            q_up = """
+                UPDATE users 
+                SET full_name = ?, email = ?, department = ?, phone = ?, password_hash = ?
+                WHERE user_id = ? OR email = ? OR username = ?
+            """ if db_type == "sqlite" else """
+                UPDATE users 
+                SET full_name = %s, email = %s, department = %s, phone = %s, password_hash = %s
+                WHERE user_id = %s OR email = %s OR username = %s
+            """
+            cursor.execute(q_up, (full_name, email, department, phone, new_password, user_id, curr_email, curr_username))
+        else:
+            q_up = """
+                UPDATE users 
+                SET full_name = ?, email = ?, department = ?, phone = ?
+                WHERE user_id = ? OR email = ? OR username = ?
+            """ if db_type == "sqlite" else """
+                UPDATE users 
+                SET full_name = %s, email = %s, department = %s, phone = %s
+                WHERE user_id = %s OR email = %s OR username = %s
+            """
+            cursor.execute(q_up, (full_name, email, department, phone, user_id, curr_email, curr_username))
+
+        conn.commit()
+        conn.close()
+
+        # Update in-memory session so the entire app reflects the updated name & email instantly
+        session['user']['name'] = full_name
+        session['user']['email'] = email
+        session['user']['department'] = department
+        session['user']['phone'] = phone
+
+        return jsonify({
+            'success': True,
+            'message': 'Profile details saved and updated in the database successfully!',
+            'user': {
+                'full_name': full_name,
+                'email': email,
+                'department': department,
+                'phone': phone
+            }
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': f"Database update error: {str(e)}"}), 500
+
+@app.route('/api/users/list', methods=['GET'])
+def get_users_list():
+    if 'user' not in session or session['user'].get('role') != 'Admin':
+        return jsonify({'success': False, 'error': 'Access denied: Admin role required'}), 403
+
+    try:
+        conn, db_type = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT user_id, username, full_name, email, role, department, phone, auth_type, created_at, last_login FROM users ORDER BY user_id ASC")
+        rows = cursor.fetchall()
+        conn.close()
+
+        user_list = []
+        for r in rows:
+            user_list.append({
+                'user_id': r[0],
+                'username': r[1],
+                'full_name': r[2] or 'Campus User',
+                'email': r[3],
+                'role': 'Admin' if r[4] and r[4].lower() == 'admin' else 'Viewer',
+                'department': r[5] or 'Department of Infrastructure & Energy Systems',
+                'phone': r[6] or '--',
+                'auth_type': r[7] or 'database',
+                'created_at': str(r[8]) if r[8] else '--',
+                'last_login': str(r[9]) if r[9] else '--'
+            })
+        return jsonify({'success': True, 'users': user_list})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/users/add', methods=['POST'])
+def add_new_user():
+    if 'user' not in session or session['user'].get('role') != 'Admin':
+        return jsonify({'success': False, 'error': 'Access denied: Admin role required'}), 403
+
+    data = request.get_json() or {}
+    username = data.get('username', '').strip()
+    full_name = data.get('full_name', '').strip()
+    email = data.get('email', '').strip()
+    password = data.get('password', '').strip() or 'admin123'
+    role = data.get('role', 'viewer').strip().lower()
+    department = data.get('department', '').strip() or 'Faculty Department'
+    phone = data.get('phone', '').strip() or '+91 98765 43210'
+
+    if not username or not email or not full_name:
+        return jsonify({'success': False, 'error': 'Username, Full Name, and Email are required fields.'}), 400
+
+    try:
+        conn, db_type = get_db_connection()
+        cursor = conn.cursor()
+        q_chk = "SELECT user_id FROM users WHERE username = ? OR email = ?" if db_type == "sqlite" else "SELECT user_id FROM users WHERE username = %s OR email = %s"
+        cursor.execute(q_chk, (username, email))
+        if cursor.fetchone():
+            conn.close()
+            return jsonify({'success': False, 'error': 'Username or Email is already registered.'}), 400
+
+        ph = "(?,?,?,?,?,?,?,?)" if db_type == "sqlite" else "(%s,%s,%s,%s,%s,%s,%s,%s)"
+        cursor.execute(f"INSERT INTO users (username, full_name, email, password_hash, role, department, phone, auth_type) VALUES {ph}",
+                       (username, full_name, email, password, role, department, phone, 'database'))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True, 'message': f"Account for '{full_name}' ({username}) successfully registered into database!"})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/logout')
 def logout():

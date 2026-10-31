@@ -66,15 +66,15 @@
                     <i class="fa-solid fa-file-pdf"></i> Report
                 </button>
 
-                <div class="user-menu">
+                <div class="user-menu" onclick="switchView('profile')" title="Click to view & edit your User Profile" style="cursor: pointer;">
                     <div class="avatar"><i class="fa-solid fa-user-shield"></i></div>
                     <div class="user-details">
-                        <span class="user-name">{{ user.name if user else 'Campus Admin' }}</span>
-                        <span class="role-badge {{ 'admin' if user and user.role == 'Admin' else 'viewer' }}">
+                        <span class="user-name" id="topbar-user-name">{{ user.name if user else 'Campus Admin' }}</span>
+                        <span class="role-badge {{ 'admin' if user and user.role == 'Admin' else 'viewer' }}" id="topbar-role-badge">
                             {{ user.role if user else 'Admin' }}
                         </span>
                     </div>
-                    <a href="/logout" class="logout-btn" title="Logout"><i class="fa-solid fa-right-from-bracket"></i></a>
+                    <a href="/logout" class="logout-btn" title="Logout" onclick="event.stopPropagation()"><i class="fa-solid fa-right-from-bracket"></i></a>
                 </div>
             </div>
         </header>
@@ -101,7 +101,11 @@
                     </a>
                     
                     <div class="nav-divider"></div>
-                    
+
+                    <a href="#" class="nav-item" id="nav-profile" onclick="switchView('profile')">
+                        <i class="fa-solid fa-id-card-clip"></i>
+                        <span class="nav-text">My Profile</span>
+                    </a>
                     <a href="#" class="nav-item {{ 'disabled' if user and user.role != 'Admin' }}" id="nav-upload" onclick="switchView('upload')">
                         <i class="fa-solid fa-cloud-arrow-up"></i>
                         <span class="nav-text">Upload Data</span>
@@ -609,41 +613,297 @@
                     </div>
                 </div>
 
+                <!-- USER PROFILE VIEW (Full Authentication & Authorization Management) -->
+                <div class="view-section" id="view-profile">
+                    <!-- Profile Hero Banner -->
+                    <div class="profile-hero-banner">
+                        <div class="profile-hero-content">
+                            <div class="profile-avatar-large">
+                                <i class="fa-solid fa-user-shield"></i>
+                                <span class="profile-status-dot" title="Authenticated Database Session"></span>
+                            </div>
+                            <div class="profile-hero-text">
+                                <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                                    <h2 id="prof-hero-name">{{ user.name if user else 'Campus Administrator' }}</h2>
+                                    <span class="role-badge {{ 'admin' if user and user.role == 'Admin' else 'viewer' }}" id="prof-hero-role">
+                                        {{ user.role if user else 'Admin' }}
+                                    </span>
+                                    <span class="auth-provider-badge" id="prof-hero-provider">
+                                        <i class="fa-solid fa-shield-halved"></i> Database Authenticated
+                                    </span>
+                                </div>
+                                <p id="prof-hero-dept" style="color: var(--text-muted); font-size: 13px; margin-top: 4px;">
+                                    <i class="fa-solid fa-building-columns"></i> <span id="prof-hero-dept-text">{{ user.department if user and user.department else 'Department of Infrastructure & Energy Systems' }}</span>
+                                </p>
+                            </div>
+                        </div>
+                        <div class="profile-hero-actions">
+                            <button class="btn-secondary" onclick="loadUserProfile()" title="Sync and refresh latest profile state from database">
+                                <i class="fa-solid fa-arrows-rotate"></i> Sync Data
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Profile Split Grid -->
+                    <div class="split-grid profile-split-grid" style="margin-top: 20px;">
+                        <!-- Column 1: Identity & Authorization Details -->
+                        <div style="display: flex; flex-direction: column; gap: 20px;">
+                            <!-- Identity Card -->
+                            <div class="panel-card">
+                                <div class="card-header">
+                                    <h3><i class="fa-solid fa-id-badge" style="color: var(--primary);"></i> Authentication & Credentials</h3>
+                                    <span class="badge" id="prof-account-status">Verified Account</span>
+                                </div>
+                                
+                                <div class="profile-info-list">
+                                    <div class="info-row">
+                                        <span class="info-label"><i class="fa-solid fa-hashtag"></i> User ID</span>
+                                        <strong class="info-val" id="prof-display-id">{{ user.user_id if user and user.user_id else 1 }}</strong>
+                                    </div>
+                                    <div class="info-row">
+                                        <span class="info-label"><i class="fa-solid fa-user"></i> System Username</span>
+                                        <strong class="info-val" id="prof-display-username">{{ user.username if user else 'admin' }}</strong>
+                                    </div>
+                                    <div class="info-row">
+                                        <span class="info-label"><i class="fa-solid fa-envelope"></i> Email Address</span>
+                                        <span class="info-val" id="prof-display-email">{{ user.email if user else 'admin@campus.edu' }}</span>
+                                    </div>
+                                    <div class="info-row">
+                                        <span class="info-label"><i class="fa-solid fa-phone"></i> Contact Phone</span>
+                                        <span class="info-val" id="prof-display-phone">{{ user.phone if user and user.phone else '+91 98765 43210' }}</span>
+                                    </div>
+                                    <div class="info-row">
+                                        <span class="info-label"><i class="fa-solid fa-key"></i> Authentication Mode</span>
+                                        <span class="info-val" id="prof-display-auth">{{ 'Google SSO' if user and user.auth_type == 'google' else 'Database Credentials' }}</span>
+                                    </div>
+                                    <div class="info-row">
+                                        <span class="info-label"><i class="fa-solid fa-calendar-check"></i> Account Created</span>
+                                        <span class="info-val" id="prof-display-created">{{ user.created_at if user and user.created_at else '2026-08-28 10:22:37' }}</span>
+                                    </div>
+                                    <div class="info-row">
+                                        <span class="info-label"><i class="fa-solid fa-clock-rotate-left"></i> Last Active Session</span>
+                                        <span class="info-val" id="prof-display-login">Active Now</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Authorization Matrix Card -->
+                            <div class="panel-card">
+                                <div class="card-header">
+                                    <h3><i class="fa-solid fa-user-lock" style="color: var(--warning);"></i> Authorization & Privileges Matrix</h3>
+                                    <span class="role-badge {{ 'admin' if user and user.role == 'Admin' else 'viewer' }}" id="prof-matrix-role">
+                                        {{ user.role if user else 'Admin' }} Tier
+                                    </span>
+                                </div>
+                                <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;" id="prof-tier-desc">
+                                    {{ 'Tier-1 Campus Executive with full administrative, ingestion & calibration access.' if user and user.role == 'Admin' else 'Tier-2 Institutional Viewer with read-only visualization privileges.' }}
+                                </p>
+
+                                <div class="permissions-container" id="prof-permissions-list">
+                                    <!-- Populated dynamically via loadUserProfile() -->
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Column 2: Modify Details & Save into Database Form -->
+                        <div class="panel-card" style="height: fit-content;">
+                            <div class="card-header">
+                                <h3><i class="fa-solid fa-pen-to-square" style="color: var(--success);"></i> Modify User Profile & Credentials</h3>
+                                <span class="badge" style="background: rgba(16, 185, 129, 0.15); color: var(--success);">
+                                    <i class="fa-solid fa-database"></i> Live Database Persistence
+                                </span>
+                            </div>
+                            <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 16px;">
+                                Changes made here are verified and committed directly to the campus user relational database.
+                            </p>
+
+                            <!-- Feedback Alert Box -->
+                            <div id="profileAlertBox" style="display: none; margin-bottom: 16px;"></div>
+
+                            <form id="profileEditForm" onsubmit="saveUserProfile(event)">
+                                <div class="form-row">
+                                    <div class="form-group" style="flex: 1;">
+                                        <label for="edit-full-name"><i class="fa-solid fa-user"></i> Full Display Name *</label>
+                                        <input type="text" id="edit-full-name" class="form-control" required placeholder="e.g. Dr. Rajesh Kumar" value="{{ user.name if user else 'Campus Administrator' }}">
+                                    </div>
+
+                                    <div class="form-group" style="flex: 1;">
+                                        <label for="edit-email"><i class="fa-solid fa-envelope"></i> Institutional Email ID *</label>
+                                        <input type="email" id="edit-email" class="form-control" required placeholder="e.g. admin@campus.edu" value="{{ user.email if user else 'admin@campus.edu' }}">
+                                    </div>
+                                </div>
+
+                                <div class="form-row">
+                                    <div class="form-group" style="flex: 1;">
+                                        <label for="edit-department"><i class="fa-solid fa-building-columns"></i> Department / Directorate</label>
+                                        <input type="text" id="edit-department" class="form-control" placeholder="e.g. Dept of Infrastructure & Energy" value="{{ user.department if user and user.department else 'Department of Infrastructure & Energy Systems' }}">
+                                    </div>
+
+                                    <div class="form-group" style="flex: 1;">
+                                        <label for="edit-phone"><i class="fa-solid fa-phone"></i> Contact Phone Number</label>
+                                        <input type="text" id="edit-phone" class="form-control" placeholder="e.g. +91 98765 43210" value="{{ user.phone if user and user.phone else '+91 98765 43210' }}">
+                                    </div>
+                                </div>
+
+                                <div class="form-row">
+                                    <div class="form-group" style="flex: 1;">
+                                        <label><i class="fa-solid fa-shield"></i> System Username (Read-Only)</label>
+                                        <input type="text" id="edit-username" class="form-control" readonly disabled value="{{ user.username if user else 'admin' }}" style="opacity: 0.7; cursor: not-allowed;">
+                                    </div>
+
+                                    <div class="form-group" style="flex: 1;">
+                                        <label><i class="fa-solid fa-user-shield"></i> Assigned Access Role (System Governed)</label>
+                                        <input type="text" id="edit-role-display" class="form-control" readonly disabled value="{{ user.role if user else 'Admin' }}" style="opacity: 0.7; cursor: not-allowed;">
+                                    </div>
+                                </div>
+
+                                <!-- Change Password Section -->
+                                <div class="password-change-box" style="margin-top: 10px; padding: 16px; border: 1px dashed var(--card-border); border-radius: 12px; background: rgba(255,255,255,0.02);">
+                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                                        <strong style="font-size: 13px; display: flex; align-items: center; gap: 8px;">
+                                            <i class="fa-solid fa-lock" style="color: var(--primary);"></i> Security Credentials & Password Update
+                                        </strong>
+                                        <small style="color: var(--text-muted);">Leave blank if unchanged</small>
+                                    </div>
+
+                                    <div class="form-group">
+                                        <label for="edit-current-password" style="font-size: 12px;">Current Password (Required only if changing password)</label>
+                                        <input type="password" id="edit-current-password" class="form-control" placeholder="Enter your current password">
+                                    </div>
+
+                                    <div class="form-row">
+                                        <div class="form-group" style="flex: 1;">
+                                            <label for="edit-new-password" style="font-size: 12px;">New Password</label>
+                                            <input type="password" id="edit-new-password" class="form-control" placeholder="Min. 4 characters">
+                                        </div>
+                                        <div class="form-group" style="flex: 1;">
+                                            <label for="edit-confirm-password" style="font-size: 12px;">Confirm New Password</label>
+                                            <input type="password" id="edit-confirm-password" class="form-control" placeholder="Re-type new password">
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div style="margin-top: 20px; display: flex; justify-content: flex-end; gap: 12px;">
+                                    <button type="button" class="btn-secondary" onclick="loadUserProfile()">
+                                        <i class="fa-solid fa-rotate-left"></i> Discard
+                                    </button>
+                                    <button type="submit" class="btn-primary" id="btnSaveProfile" style="width: auto; padding: 12px 24px;">
+                                        <i class="fa-solid fa-floppy-disk"></i> Save Profile Changes to Database
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- USERS & ROLES VIEW (Admin Master Registry) -->
                 <div class="view-section" id="view-users">
                     <div class="panel-card">
                         <div class="card-header">
-                            <h2><i class="fa-solid fa-users-gear"></i> User Roles & Access Control</h2>
+                            <div>
+                                <h2><i class="fa-solid fa-users-gear" style="color: var(--primary);"></i> Campus User Directory & Access Management</h2>
+                                <span class="card-subtitle">Manage campus accounts, role assignments, and authorization privileges</span>
+                            </div>
+                            {% if user and user.role == 'Admin' %}
+                            <button class="btn-primary" onclick="openAddUserModal()" style="width: auto; padding: 9px 18px; font-size: 13px;">
+                                <i class="fa-solid fa-user-plus"></i> Register New User
+                            </button>
+                            {% endif %}
                         </div>
+
                         {% if user and user.role == 'Admin' %}
-                        <table class="user-table">
-                            <thead>
-                                <tr>
-                                    <th>User Email</th>
-                                    <th>Display Name</th>
-                                    <th>Assigned Role</th>
-                                    <th>Status</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr>
-                                    <td>admin@campus.edu</td>
-                                    <td>Campus Administrator</td>
-                                    <td><span class="role-badge admin">Admin</span></td>
-                                    <td><span style="color: var(--success); font-weight: 600;">Active</span></td>
-                                </tr>
-                                <tr>
-                                    <td>viewer@campus.edu</td>
-                                    <td>Faculty Reviewer</td>
-                                    <td><span class="role-badge viewer">Viewer</span></td>
-                                    <td><span style="color: var(--success); font-weight: 600;">Active</span></td>
-                                </tr>
-                            </tbody>
-                        </table>
+                        <div style="overflow-x: auto; margin-top: 14px;">
+                            <table class="user-table" id="usersMasterTable">
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>Username</th>
+                                        <th>Full Display Name</th>
+                                        <th>Institutional Email</th>
+                                        <th>Assigned Role</th>
+                                        <th>Department</th>
+                                        <th>Contact Phone</th>
+                                        <th>Auth Mode</th>
+                                        <th>Registered Date</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="usersMasterTableBody">
+                                    <tr>
+                                        <td colspan="9" style="text-align: center; color: var(--text-muted); padding: 24px;">
+                                            <i class="fa-solid fa-spinner fa-spin"></i> Loading campus user directory from database...
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- Add User Modal -->
+                        <div id="addUserModal" class="modal-backdrop" style="display: none;">
+                            <div class="modal-card">
+                                <div class="card-header" style="border-bottom: 1px solid var(--card-border); padding-bottom: 12px;">
+                                    <h3><i class="fa-solid fa-user-plus" style="color: var(--primary);"></i> Register New Campus User</h3>
+                                    <button class="icon-btn" onclick="closeAddUserModal()"><i class="fa-solid fa-xmark"></i></button>
+                                </div>
+
+                                <div id="addUserAlertBox" style="display: none; margin-top: 12px;"></div>
+
+                                <form id="addUserForm" onsubmit="addNewUser(event)" style="margin-top: 16px;">
+                                    <div class="form-row">
+                                        <div class="form-group" style="flex: 1;">
+                                            <label for="new-user-username"><i class="fa-solid fa-user"></i> Username *</label>
+                                            <input type="text" id="new-user-username" class="form-control" required placeholder="e.g. jdoe">
+                                        </div>
+                                        <div class="form-group" style="flex: 1;">
+                                            <label for="new-user-fullname"><i class="fa-solid fa-id-card"></i> Full Display Name *</label>
+                                            <input type="text" id="new-user-fullname" class="form-control" required placeholder="e.g. John Doe">
+                                        </div>
+                                    </div>
+
+                                    <div class="form-row">
+                                        <div class="form-group" style="flex: 1;">
+                                            <label for="new-user-email"><i class="fa-solid fa-envelope"></i> Institutional Email *</label>
+                                            <input type="email" id="new-user-email" class="form-control" required placeholder="e.g. jdoe@campus.edu">
+                                        </div>
+                                        <div class="form-group" style="flex: 1;">
+                                            <label for="new-user-role"><i class="fa-solid fa-user-shield"></i> Assigned Role *</label>
+                                            <select id="new-user-role" class="form-control">
+                                                <option value="viewer" selected>Viewer (Read-Only Visualizations)</option>
+                                                <option value="admin">Admin (Full Administrative Privileges)</option>
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <div class="form-row">
+                                        <div class="form-group" style="flex: 1;">
+                                            <label for="new-user-dept"><i class="fa-solid fa-building-columns"></i> Department</label>
+                                            <input type="text" id="new-user-dept" class="form-control" placeholder="e.g. Dept of Computer Science" value="Department of Electrical Engineering">
+                                        </div>
+                                        <div class="form-group" style="flex: 1;">
+                                            <label for="new-user-phone"><i class="fa-solid fa-phone"></i> Contact Phone</label>
+                                            <input type="text" id="new-user-phone" class="form-control" placeholder="e.g. +91 98765 43210" value="+91 98765 43210">
+                                        </div>
+                                    </div>
+
+                                    <div class="form-group">
+                                        <label for="new-user-password"><i class="fa-solid fa-lock"></i> Initial Password *</label>
+                                        <input type="password" id="new-user-password" class="form-control" required placeholder="Default initial password" value="welcome123">
+                                    </div>
+
+                                    <div style="display: flex; justify-content: flex-end; gap: 12px; margin-top: 20px;">
+                                        <button type="button" class="btn-secondary" onclick="closeAddUserModal()">Cancel</button>
+                                        <button type="submit" class="btn-primary" id="btnCreateUser" style="width: auto; padding: 10px 22px;">
+                                            <i class="fa-solid fa-check"></i> Register User in Database
+                                        </button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+
                         {% else %}
                         <div class="access-denied-box">
                             <i class="fa-solid fa-lock" style="font-size: 32px; color: var(--danger);"></i>
                             <h3>Access Restricted</h3>
-                            <p>User and role management is restricted to <strong>Admin</strong> accounts.</p>
+                            <p>Campus user and role directory management is restricted to <strong>Admin</strong> accounts.</p>
                         </div>
                         {% endif %}
                     </div>

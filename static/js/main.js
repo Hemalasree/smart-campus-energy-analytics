@@ -28,9 +28,13 @@ function switchView(viewName) {
     if (targetView) targetView.classList.add('active');
     if (targetNav) targetNav.classList.add('active');
 
-    // Re-trigger chart render on view switch
+    // Trigger data refresh on view switch
     if (viewName === 'analytics') {
         fetchDashboardData();
+    } else if (viewName === 'profile') {
+        loadUserProfile();
+    } else if (viewName === 'users') {
+        loadUsersList();
     }
 }
 
@@ -717,6 +721,292 @@ async function uploadAndProcessCsv() {
     } catch (err) {
         console.error('CSV upload failed:', err);
         alert('Network error while uploading dataset: ' + err.message);
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = origBtnHtml;
+    }
+}
+
+// --- User Profile & Authorization Management ---
+async function loadUserProfile() {
+    try {
+        const res = await fetch('/api/user/profile');
+        const data = await res.json();
+
+        if (data.success) {
+            const u = data.user;
+            const auth = data.authorization;
+
+            // Hero banner updates
+            const heroName = document.getElementById('prof-hero-name');
+            const heroRole = document.getElementById('prof-hero-role');
+            const heroDept = document.getElementById('prof-hero-dept-text');
+            const heroProvider = document.getElementById('prof-hero-provider');
+
+            if (heroName) heroName.innerText = u.full_name;
+            if (heroRole) {
+                heroRole.innerText = u.role;
+                heroRole.className = `role-badge ${u.role === 'Admin' ? 'admin' : 'viewer'}`;
+            }
+            if (heroDept) heroDept.innerText = u.department;
+            if (heroProvider) {
+                heroProvider.innerHTML = u.auth_type === 'google' 
+                    ? '<i class="fa-brands fa-google"></i> Google SSO Authenticated' 
+                    : '<i class="fa-solid fa-shield-halved"></i> Database Authenticated';
+            }
+
+            // Topbar sync
+            const topbarName = document.getElementById('topbar-user-name');
+            const topbarRole = document.getElementById('topbar-role-badge');
+            if (topbarName) topbarName.innerText = u.full_name;
+            if (topbarRole) {
+                topbarRole.innerText = u.role;
+                topbarRole.className = `role-badge ${u.role === 'Admin' ? 'admin' : 'viewer'}`;
+            }
+
+            // Identity card fields
+            const displayId = document.getElementById('prof-display-id');
+            const displayUsername = document.getElementById('prof-display-username');
+            const displayEmail = document.getElementById('prof-display-email');
+            const displayPhone = document.getElementById('prof-display-phone');
+            const displayAuth = document.getElementById('prof-display-auth');
+            const displayCreated = document.getElementById('prof-display-created');
+            const displayLogin = document.getElementById('prof-display-login');
+
+            if (displayId) displayId.innerText = `#${u.user_id}`;
+            if (displayUsername) displayUsername.innerText = `@${u.username}`;
+            if (displayEmail) displayEmail.innerText = u.email;
+            if (displayPhone) displayPhone.innerText = u.phone;
+            if (displayAuth) displayAuth.innerText = u.auth_type === 'google' ? 'Google Single Sign-On' : 'Database Password';
+            if (displayCreated) displayCreated.innerText = u.created_at;
+            if (displayLogin) displayLogin.innerText = u.last_login || 'Active Session';
+
+            // Authorization matrix
+            const matrixRole = document.getElementById('prof-matrix-role');
+            const tierDesc = document.getElementById('prof-tier-desc');
+            const permsList = document.getElementById('prof-permissions-list');
+
+            if (matrixRole) {
+                matrixRole.innerText = `${auth.role} Tier`;
+                matrixRole.className = `role-badge ${auth.badge_class}`;
+            }
+            if (tierDesc) tierDesc.innerText = auth.access_level;
+
+            if (permsList && auth.permissions) {
+                permsList.innerHTML = auth.permissions.map(p => `
+                    <div class="permission-item ${p.granted ? 'granted' : 'restricted'}">
+                        <div class="permission-icon">
+                            ${p.granted ? '<i class="fa-solid fa-circle-check"></i>' : '<i class="fa-solid fa-circle-xmark"></i>'}
+                        </div>
+                        <div style="flex: 1;">
+                            <div class="permission-title">${p.name}</div>
+                            <div class="permission-desc">${p.desc}</div>
+                        </div>
+                        <span class="permission-status-tag ${p.granted ? 'granted' : 'restricted'}">
+                            ${p.granted ? 'AUTHORIZED' : 'RESTRICTED'}
+                        </span>
+                    </div>
+                `).join('');
+            }
+
+            // Form inputs
+            const inputName = document.getElementById('edit-full-name');
+            const inputEmail = document.getElementById('edit-email');
+            const inputDept = document.getElementById('edit-department');
+            const inputPhone = document.getElementById('edit-phone');
+            const inputUsername = document.getElementById('edit-username');
+            const inputRoleDisplay = document.getElementById('edit-role-display');
+
+            if (inputName) inputName.value = u.full_name;
+            if (inputEmail) inputEmail.value = u.email;
+            if (inputDept) inputDept.value = u.department;
+            if (inputPhone) inputPhone.value = u.phone;
+            if (inputUsername) inputUsername.value = u.username;
+            if (inputRoleDisplay) inputRoleDisplay.value = `${u.role} (System Assigned)`;
+
+            // Clear passwords
+            const currP = document.getElementById('edit-current-password');
+            const newP = document.getElementById('edit-new-password');
+            const confP = document.getElementById('edit-confirm-password');
+            if (currP) currP.value = '';
+            if (newP) newP.value = '';
+            if (confP) confP.value = '';
+        }
+    } catch (err) {
+        console.error('Failed to load user profile:', err);
+    }
+}
+
+async function saveUserProfile(e) {
+    e.preventDefault();
+    const btn = document.getElementById('btnSaveProfile');
+    const alertBox = document.getElementById('profileAlertBox');
+
+    const fullName = document.getElementById('edit-full-name').value.trim();
+    const email = document.getElementById('edit-email').value.trim();
+    const department = document.getElementById('edit-department').value.trim();
+    const phone = document.getElementById('edit-phone').value.trim();
+    const currentPassword = document.getElementById('edit-current-password').value.trim();
+    const newPassword = document.getElementById('edit-new-password').value.trim();
+    const confirmPassword = document.getElementById('edit-confirm-password').value.trim();
+
+    if (newPassword) {
+        if (newPassword.length < 4) {
+            showProfileAlert('New password must be at least 4 characters long.', 'danger');
+            return;
+        }
+        if (newPassword !== confirmPassword) {
+            showProfileAlert('New password and Confirmation password do not match.', 'danger');
+            return;
+        }
+    }
+
+    const origBtnHtml = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Saving to Database...';
+
+    try {
+        const payload = {
+            full_name: fullName,
+            email: email,
+            department: department,
+            phone: phone,
+            current_password: currentPassword,
+            new_password: newPassword
+        };
+
+        const res = await fetch('/api/user/profile', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        const data = await res.json();
+
+        if (data.success) {
+            showProfileAlert(data.message, 'success');
+            // Re-sync profile state
+            loadUserProfile();
+        } else {
+            showProfileAlert(data.error || 'Failed to update profile.', 'danger');
+        }
+    } catch (err) {
+        showProfileAlert('Network error while saving profile: ' + err.message, 'danger');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = origBtnHtml;
+    }
+}
+
+function showProfileAlert(message, type) {
+    const alertBox = document.getElementById('profileAlertBox');
+    if (!alertBox) return;
+
+    alertBox.style.display = 'block';
+    const isSuccess = type === 'success';
+    alertBox.className = isSuccess ? 'alert-box alert-success' : 'alert-box alert-danger';
+    alertBox.innerHTML = `
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <i class="fa-solid ${isSuccess ? 'fa-circle-check' : 'fa-circle-exclamation'}"></i>
+                <span>${message}</span>
+            </div>
+            <button type="button" onclick="this.parentElement.parentElement.style.display='none'" style="background: none; border: none; color: inherit; cursor: pointer; font-size: 14px;">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+    `;
+    alertBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+// --- Admin Users Directory Management ---
+async function loadUsersList() {
+    const tbody = document.getElementById('usersMasterTableBody');
+    if (!tbody) return;
+
+    try {
+        const res = await fetch('/api/users/list');
+        const data = await res.json();
+
+        if (data.success && data.users) {
+            tbody.innerHTML = data.users.map(u => `
+                <tr>
+                    <td><strong>#${u.user_id}</strong></td>
+                    <td><code>@${u.username}</code></td>
+                    <td><strong>${u.full_name}</strong></td>
+                    <td>${u.email}</td>
+                    <td><span class="role-badge ${u.role === 'Admin' ? 'admin' : 'viewer'}">${u.role}</span></td>
+                    <td style="font-size: 12px; color: var(--text-muted);">${u.department}</td>
+                    <td>${u.phone}</td>
+                    <td><span class="auth-provider-badge" style="font-size: 10px; padding: 2px 7px;">${u.auth_type}</span></td>
+                    <td style="font-size: 12px; color: var(--text-muted);">${u.created_at}</td>
+                </tr>
+            `).join('');
+        } else {
+            tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; color: var(--danger); padding: 18px;">${data.error || 'Access restricted.'}</td></tr>`;
+        }
+    } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; color: var(--danger); padding: 18px;">Failed to load users: ${err.message}</td></tr>`;
+    }
+}
+
+function openAddUserModal() {
+    const modal = document.getElementById('addUserModal');
+    if (modal) modal.style.display = 'flex';
+}
+
+function closeAddUserModal() {
+    const modal = document.getElementById('addUserModal');
+    if (modal) modal.style.display = 'none';
+    const alertBox = document.getElementById('addUserAlertBox');
+    if (alertBox) alertBox.style.display = 'none';
+}
+
+async function addNewUser(e) {
+    e.preventDefault();
+    const btn = document.getElementById('btnCreateUser');
+    const alertBox = document.getElementById('addUserAlertBox');
+
+    const payload = {
+        username: document.getElementById('new-user-username').value.trim(),
+        full_name: document.getElementById('new-user-fullname').value.trim(),
+        email: document.getElementById('new-user-email').value.trim(),
+        role: document.getElementById('new-user-role').value,
+        department: document.getElementById('new-user-dept').value.trim(),
+        phone: document.getElementById('new-user-phone').value.trim(),
+        password: document.getElementById('new-user-password').value.trim()
+    };
+
+    const origBtnHtml = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Saving...';
+
+    try {
+        const res = await fetch('/api/users/add', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+
+        if (data.success) {
+            closeAddUserModal();
+            alert(data.message);
+            loadUsersList();
+            document.getElementById('addUserForm').reset();
+        } else {
+            if (alertBox) {
+                alertBox.style.display = 'block';
+                alertBox.className = 'alert-box alert-danger';
+                alertBox.innerHTML = `<i class="fa-solid fa-circle-exclamation"></i> ${data.error || 'Failed to create user.'}`;
+            }
+        }
+    } catch (err) {
+        if (alertBox) {
+            alertBox.style.display = 'block';
+            alertBox.className = 'alert-box alert-danger';
+            alertBox.innerHTML = `<i class="fa-solid fa-circle-exclamation"></i> ${err.message}`;
+        }
     } finally {
         btn.disabled = false;
         btn.innerHTML = origBtnHtml;
