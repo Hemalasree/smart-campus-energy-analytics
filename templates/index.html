@@ -59,7 +59,7 @@
 
                 <div class="notif-bell" onclick="switchView('recommendations')" title="Active Recommendations & Alerts">
                     <i class="fa-solid fa-bell"></i>
-                    <span class="notif-badge">3</span>
+                    <span class="notif-badge" id="top-notif-badge">3</span>
                 </div>
 
                 <button class="btn-report" onclick="window.open('/report', '_blank')" title="Print Executive Summary Report">
@@ -97,7 +97,7 @@
                     <a href="#" class="nav-item" id="nav-recommendations" onclick="switchView('recommendations')">
                         <i class="fa-solid fa-lightbulb"></i>
                         <span class="nav-text">Recommendations</span>
-                        <span class="badge nav-badge">3</span>
+                        <span class="badge nav-badge" id="nav-rec-badge">3</span>
                     </a>
                     
                     <div class="nav-divider"></div>
@@ -258,23 +258,10 @@
                         <div class="panel-card">
                             <div class="card-header">
                                 <h3><i class="fa-solid fa-lightbulb"></i> Strategic Action Preview</h3>
-                                <a href="#" class="view-link" onclick="switchView('recommendations')">View All (3) →</a>
+                                <a href="#" class="view-link" onclick="switchView('recommendations')">View All (<span id="preview-rec-count">--</span>) →</a>
                             </div>
-                            <div class="rec-preview-list">
-                                <div class="rec-item">
-                                    <i class="fa-solid fa-temperature-arrow-down" style="color: var(--warning);"></i>
-                                    <div>
-                                        <strong>Peak Load Shifting (14:00 - 16:00)</strong>
-                                        <p>Stagger Central Library HVAC setpoints to 24°C during peak afternoon load.</p>
-                                    </div>
-                                </div>
-                                <div class="rec-item">
-                                    <i class="fa-solid fa-power-off" style="color: var(--success);"></i>
-                                    <div>
-                                        <strong>Off-Peak Night Sleep Mode</strong>
-                                        <p>Enable automated computer lab sleep schedules across Academic Blocks.</p>
-                                    </div>
-                                </div>
+                            <div class="rec-preview-list" id="dashboardRecPreviewList">
+                                <div class="loading-spinner"><i class="fa-solid fa-circle-notch fa-spin"></i> Loading strategic actions...</div>
                             </div>
                         </div>
                     </div>
@@ -497,35 +484,213 @@
                 </div>
 
                 <div class="view-section" id="view-recommendations">
-                    <div class="panel-card">
-                        <div class="card-header">
-                            <h2><i class="fa-solid fa-lightbulb"></i> Campus Energy Efficiency Recommendations</h2>
+                    <!-- Top Action / Context Header -->
+                    <div class="panel-card rec-header-card" style="margin-bottom: 20px;">
+                        <div class="rec-header-content" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px;">
+                            <div>
+                                <h2 style="font-size: 1.45rem; font-weight: 700; display: flex; align-items: center; gap: 10px; margin-bottom: 6px;">
+                                    <i class="fa-solid fa-lightbulb" style="color: var(--warning);"></i> 
+                                    Campus Energy Efficiency & Load-Shifting Recommendations
+                                </h2>
+                                <p style="font-size: 0.9rem; color: var(--text-muted); margin: 0;">
+                                    Dynamic AI-driven prescriptive actions calibrated to live Coimbatore ambient weather (<span id="rec-live-temp" style="color: var(--primary); font-weight: 600;">--°C</span>), TOU peak grid tariff windows, BEE Star EUI ratings, and Academic Calendar.
+                                </p>
+                            </div>
+                            <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                                <div class="rec-live-pill" style="display: flex; align-items: center; gap: 8px; background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.3); padding: 7px 14px; border-radius: 20px; font-size: 0.82rem; color: var(--success); font-weight: 600;">
+                                    <span class="live-dot" style="width: 8px; height: 8px; background: var(--success); border-radius: 50%; box-shadow: 0 0 8px var(--success);"></span>
+                                    Engine Live & Syncing
+                                </div>
+                                <button class="btn btn-secondary btn-sm" id="btnRefreshRecs" onclick="loadRecommendations(true)" title="Re-evaluate live campus conditions">
+                                    <i class="fa-solid fa-arrows-rotate" id="refreshRecsIcon"></i> Refresh Engine
+                                </button>
+                                {% if user and user.role == 'Admin' %}
+                                <button class="btn btn-primary btn-sm" onclick="openAddRecModal()">
+                                    <i class="fa-solid fa-plus"></i> Propose Action
+                                </button>
+                                {% endif %}
+                            </div>
                         </div>
-                        <div class="rec-full-list">
-                            <div class="rec-card-full">
-                                <div class="rec-icon amber"><i class="fa-solid fa-temperature-arrow-down"></i></div>
-                                <div class="rec-body">
-                                    <h3>1. HVAC Setpoint Optimization during High Ambient Heat</h3>
-                                    <p>When ambient weather exceeds 30°C, adjust central HVAC setpoints to 24°C. Reduces peak compressor power draw by 15% across Academic Blocks.</p>
-                                    <span class="rec-meta">Est. Savings: ₹14,200/month | Priority: High</span>
+                    </div>
+
+                    <!-- 4 Metric KPI Cards -->
+                    <div class="metrics-grid" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 24px;">
+                        <div class="metric-card rec-kpi-card" style="border-left: 4px solid var(--primary);">
+                            <div class="metric-header">
+                                <span class="metric-title">Active Action Items</span>
+                                <div class="metric-icon" style="background: rgba(59, 130, 246, 0.15); color: var(--primary);"><i class="fa-solid fa-list-check"></i></div>
+                            </div>
+                            <div class="metric-value" id="rec-kpi-active">--</div>
+                            <div class="metric-trend" id="rec-kpi-critical" style="color: var(--danger); font-size: 0.82rem;">
+                                <i class="fa-solid fa-triangle-exclamation"></i> -- Critical Priority
+                            </div>
+                        </div>
+
+                        <div class="metric-card rec-kpi-card" style="border-left: 4px solid var(--success);">
+                            <div class="metric-header">
+                                <span class="metric-title">Potential Cost Savings</span>
+                                <div class="metric-icon" style="background: rgba(16, 185, 129, 0.15); color: var(--success);"><i class="fa-solid fa-indian-rupee-sign"></i></div>
+                            </div>
+                            <div class="metric-value" id="rec-kpi-savings-inr" style="color: var(--success);">₹--</div>
+                            <div class="metric-trend positive" style="font-size: 0.82rem;">
+                                <i class="fa-solid fa-arrow-trend-down"></i> Estimated monthly bill curtailment
+                            </div>
+                        </div>
+
+                        <div class="metric-card rec-kpi-card" style="border-left: 4px solid var(--warning);">
+                            <div class="metric-header">
+                                <span class="metric-title">Potential Energy Saved</span>
+                                <div class="metric-icon" style="background: rgba(245, 158, 11, 0.15); color: var(--warning);"><i class="fa-solid fa-bolt"></i></div>
+                            </div>
+                            <div class="metric-value" id="rec-kpi-savings-kwh" style="color: var(--warning);">-- kWh</div>
+                            <div class="metric-trend" style="color: var(--text-muted); font-size: 0.82rem;">
+                                <i class="fa-solid fa-clock-rotate-left"></i> Monthly grid load reduction
+                            </div>
+                        </div>
+
+                        <div class="metric-card rec-kpi-card" style="border-left: 4px solid var(--purple);">
+                            <div class="metric-header">
+                                <span class="metric-title">Carbon Offset Potential</span>
+                                <div class="metric-icon" style="background: rgba(139, 92, 246, 0.15); color: var(--purple);"><i class="fa-solid fa-leaf"></i></div>
+                            </div>
+                            <div class="metric-value" id="rec-kpi-co2" style="color: var(--purple);">-- kg</div>
+                            <div class="metric-trend positive" style="font-size: 0.82rem;">
+                                <i class="fa-solid fa-seedling"></i> Scope 2 emissions avoidance
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Filter Controls Bar -->
+                    <div class="panel-card" style="margin-bottom: 24px; padding: 16px 20px;">
+                        <div class="rec-filter-bar" style="display: flex; flex-wrap: wrap; gap: 14px; align-items: center; justify-content: space-between;">
+                            <div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: center; flex: 1;">
+                                <div style="display: flex; align-items: center; gap: 8px;">
+                                    <label style="font-size: 0.85rem; color: var(--text-muted); margin: 0; white-space: nowrap;"><i class="fa-solid fa-filter"></i> Status:</label>
+                                    <select id="recFilterStatus" class="form-control form-control-sm" style="width: auto; padding: 6px 12px; border-radius: 8px;" onchange="applyRecFilters()">
+                                        <option value="all">All Statuses</option>
+                                        <option value="active" selected>Active & In-Progress</option>
+                                        <option value="new">New (Pending)</option>
+                                        <option value="in_progress">In Progress</option>
+                                        <option value="implemented">Implemented</option>
+                                    </select>
+                                </div>
+
+                                <div style="display: flex; align-items: center; gap: 8px;">
+                                    <label style="font-size: 0.85rem; color: var(--text-muted); margin: 0; white-space: nowrap;"><i class="fa-solid fa-triangle-exclamation"></i> Priority:</label>
+                                    <select id="recFilterPriority" class="form-control form-control-sm" style="width: auto; padding: 6px 12px; border-radius: 8px;" onchange="applyRecFilters()">
+                                        <option value="all" selected>All Priorities</option>
+                                        <option value="critical">Critical</option>
+                                        <option value="high">High</option>
+                                        <option value="medium">Medium</option>
+                                        <option value="opportunity">Opportunity</option>
+                                    </select>
+                                </div>
+
+                                <div style="display: flex; align-items: center; gap: 8px;">
+                                    <label style="font-size: 0.85rem; color: var(--text-muted); margin: 0; white-space: nowrap;"><i class="fa-solid fa-layer-group"></i> Category:</label>
+                                    <select id="recFilterCategory" class="form-control form-control-sm" style="width: auto; padding: 6px 12px; border-radius: 8px;" onchange="applyRecFilters()">
+                                        <option value="all" selected>All Categories</option>
+                                        <option value="HVAC & Chiller">HVAC & Chiller</option>
+                                        <option value="Peak Load Shifting">Peak Load Shifting</option>
+                                        <option value="Rooftop Solar PV">Rooftop Solar PV</option>
+                                        <option value="Ghost Load Elimination">Ghost Load Elimination</option>
+                                        <option value="Academic Calendar">Academic Calendar</option>
+                                        <option value="BEE Energy Star">BEE Energy Star</option>
+                                        <option value="Custom">Custom / Manual</option>
+                                    </select>
+                                </div>
+
+                                <div style="display: flex; align-items: center; gap: 8px;">
+                                    <label style="font-size: 0.85rem; color: var(--text-muted); margin: 0; white-space: nowrap;"><i class="fa-solid fa-building"></i> Building:</label>
+                                    <select id="recFilterBuilding" class="form-control form-control-sm" style="width: auto; padding: 6px 12px; border-radius: 8px;" onchange="applyRecFilters()">
+                                        <option value="all" selected>All Campus Facilities</option>
+                                        <option value="1">Academic Block A</option>
+                                        <option value="2">Academic Block B</option>
+                                        <option value="3">Central Library</option>
+                                        <option value="4">Main Hostel Complex</option>
+                                        <option value="5">Research & Innovation Lab</option>
+                                        <option value="6">Admin & IT Center</option>
+                                    </select>
                                 </div>
                             </div>
-                            <div class="rec-card-full">
-                                <div class="rec-icon green"><i class="fa-solid fa-moon"></i></div>
-                                <div class="rec-body">
-                                    <h3>2. Automated Night Sleep Schedules for Computer Labs</h3>
-                                    <p>Enforce automated power-off policies on 450+ IT lab desktops during 22:00 to 06:00 off-peak hours.</p>
-                                    <span class="rec-meta">Est. Savings: ₹8,500/month | Priority: Medium</span>
-                                </div>
+
+                            <div style="position: relative; min-width: 200px;">
+                                <i class="fa-solid fa-magnifying-glass" style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-muted); font-size: 0.82rem;"></i>
+                                <input type="text" id="recSearchQuery" class="form-control form-control-sm" placeholder="Search actions..." style="padding-left: 32px; border-radius: 8px;" oninput="applyRecFilters()">
                             </div>
-                            <div class="rec-card-full">
-                                <div class="rec-icon purple"><i class="fa-solid fa-graduation-cap"></i></div>
-                                <div class="rec-body">
-                                    <h3>3. Vacation Term Power Reduction</h3>
-                                    <p>Automatically lower building benchmark baselines by 40% during semester breaks as detected by the Academic Calendar engine.</p>
-                                    <span class="rec-meta">Est. Savings: ₹22,000/break | Priority: High</span>
-                                </div>
+                        </div>
+                    </div>
+
+                    <!-- Dynamic Recommendations Cards Grid -->
+                    <div id="recommendationsContainer" class="rec-grid-container" style="display: flex; flex-direction: column; gap: 16px;">
+                        <div style="text-align: center; padding: 40px; color: var(--text-muted);">
+                            <i class="fa-solid fa-circle-notch fa-spin fa-2x" style="color: var(--primary); margin-bottom: 12px;"></i>
+                            <p>Loading real-time campus energy recommendations...</p>
+                        </div>
+                    </div>
+
+                    <!-- Modal: Add Custom Recommendation (Admin) -->
+                    <div class="modal-backdrop" id="addRecModal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 1000; align-items: center; justify-content: center; backdrop-filter: blur(4px);">
+                        <div class="modal-card panel-card" style="max-width: 580px; width: 90%; max-height: 90vh; overflow-y: auto; border: 1px solid var(--card-border); box-shadow: var(--shadow-lg);">
+                            <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--card-border); padding-bottom: 12px; margin-bottom: 16px;">
+                                <h3 style="margin: 0; font-size: 1.25rem;"><i class="fa-solid fa-plus-circle" style="color: var(--primary);"></i> Propose Energy Conservation Action</h3>
+                                <button type="button" class="btn-close" onclick="closeAddRecModal()" style="background: transparent; border: none; color: var(--text-muted); font-size: 1.2rem; cursor: pointer;">&times;</button>
                             </div>
+                            <form id="addRecForm" onsubmit="submitCustomRec(event)">
+                                <div class="form-group" style="margin-bottom: 14px;">
+                                    <label class="form-label">Target Campus Facility</label>
+                                    <select id="modal-rec-building" class="form-control" required>
+                                        <option value="1">Academic Block A (BLD-01)</option>
+                                        <option value="2">Academic Block B (BLD-02)</option>
+                                        <option value="3">Central Library (BLD-03)</option>
+                                        <option value="4">Main Hostel Complex (BLD-04)</option>
+                                        <option value="5">Research & Innovation Lab (BLD-05)</option>
+                                        <option value="6">Admin & IT Center (BLD-06)</option>
+                                    </select>
+                                </div>
+                                <div class="form-group" style="margin-bottom: 14px;">
+                                    <label class="form-label">Recommendation Title</label>
+                                    <input type="text" id="modal-rec-title" class="form-control" placeholder="e.g., AHU Air Balancing & Variable Flow Dampers" required>
+                                </div>
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px;">
+                                    <div class="form-group">
+                                        <label class="form-label">Category</label>
+                                        <select id="modal-rec-category" class="form-control">
+                                            <option value="HVAC & Chiller">HVAC & Chiller</option>
+                                            <option value="Lighting & Sensors">Lighting & Sensors</option>
+                                            <option value="Peak Load Shifting">Peak Load Shifting</option>
+                                            <option value="Rooftop Solar PV">Rooftop Solar PV</option>
+                                            <option value="Ghost Load Elimination">Ghost Load Elimination</option>
+                                            <option value="Equipment Retrofit">Equipment Retrofit</option>
+                                            <option value="Custom" selected>Custom</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="form-label">Priority</label>
+                                        <select id="modal-rec-priority" class="form-control">
+                                            <option value="critical">Critical</option>
+                                            <option value="high" selected>High</option>
+                                            <option value="medium">Medium</option>
+                                            <option value="opportunity">Opportunity</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="form-group" style="margin-bottom: 14px;">
+                                    <label class="form-label">Estimated Monthly Savings (kWh)</label>
+                                    <input type="number" id="modal-rec-savings-kwh" class="form-control" min="50" max="100000" step="50" value="2500" required>
+                                    <small style="color: var(--text-muted); font-size: 0.78rem;">Financial savings (₹) and CO₂ offset will be auto-calculated using tariff rate.</small>
+                                </div>
+                                <div class="form-group" style="margin-bottom: 20px;">
+                                    <label class="form-label">Detailed Action Plan & Technical Rationale</label>
+                                    <textarea id="modal-rec-message" class="form-control" rows="4" placeholder="Detail the operational steps, scheduling parameters, or hardware retrofits required..." required></textarea>
+                                </div>
+                                <div style="display: flex; justify-content: flex-end; gap: 10px;">
+                                    <button type="button" class="btn btn-secondary" onclick="closeAddRecModal()">Cancel</button>
+                                    <button type="submit" class="btn btn-primary" id="btnSubmitRec">
+                                        <i class="fa-solid fa-paper-plane"></i> Dispatch Action
+                                    </button>
+                                </div>
+                            </form>
                         </div>
                     </div>
                 </div>

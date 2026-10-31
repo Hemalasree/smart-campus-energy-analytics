@@ -15,6 +15,12 @@ document.addEventListener('DOMContentLoaded', () => {
     fetchDashboardData();
     syncLiveTemperature();
     runSimulation();
+    loadRecommendations();
+
+    // Silently poll live recommendations and counters every 45s
+    setInterval(() => {
+        loadRecommendations(false);
+    }, 45000);
 });
 
 // --- Tab View Navigation ---
@@ -35,6 +41,8 @@ function switchView(viewName) {
         loadUserProfile();
     } else if (viewName === 'users') {
         loadUsersList();
+    } else if (viewName === 'recommendations') {
+        loadRecommendations();
     }
 }
 
@@ -1010,5 +1018,406 @@ async function addNewUser(e) {
     } finally {
         btn.disabled = false;
         btn.innerHTML = origBtnHtml;
+    }
+}
+
+
+// =========================================================================
+// Real-time Dynamic Recommendations Engine
+// =========================================================================
+let allRecommendations = [];
+
+async function loadRecommendations(isManualRefresh = false) {
+    const refreshBtn = document.getElementById('btnRefreshRecs');
+    const refreshIcon = document.getElementById('refreshRecsIcon');
+
+    if (isManualRefresh && refreshIcon) {
+        refreshIcon.classList.add('fa-spin');
+        if (refreshBtn) refreshBtn.disabled = true;
+    }
+
+    try {
+        const res = await fetch('/api/recommendations');
+        const data = await res.json();
+
+        if (data.success) {
+            allRecommendations = data.recommendations || [];
+            const summary = data.summary || {};
+
+            // 1. Update KPI Summary Cards
+            const elActive = document.getElementById('rec-kpi-active');
+            const elCrit = document.getElementById('rec-kpi-critical');
+            const elInr = document.getElementById('rec-kpi-savings-inr');
+            const elKwh = document.getElementById('rec-kpi-savings-kwh');
+            const elCo2 = document.getElementById('rec-kpi-co2');
+            const elTemp = document.getElementById('rec-live-temp');
+
+            if (elActive) elActive.innerText = `${summary.active_count || 0} Actions`;
+            if (elCrit) elCrit.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> ${summary.critical_count || 0} Critical Priority`;
+            if (elInr) elInr.innerText = `₹${(summary.total_savings_inr || 0).toLocaleString()}`;
+            if (elKwh) elKwh.innerText = `${(summary.total_savings_kwh || 0).toLocaleString()} kWh`;
+            if (elCo2) elCo2.innerText = `${(summary.total_co2_kg || 0).toLocaleString()} kg`;
+            if (elTemp && summary.current_temp_c !== undefined) elTemp.innerText = `${summary.current_temp_c}°C`;
+
+            // 2. Synchronize Badges Across Navbar, Topbar Bell, and Dashboard Preview
+            const activeCount = summary.active_count !== undefined ? summary.active_count : allRecommendations.filter(r => r.status !== 'implemented').length;
+            
+            const navBadge = document.getElementById('nav-rec-badge');
+            if (navBadge) {
+                navBadge.innerText = activeCount;
+                navBadge.style.display = activeCount > 0 ? 'inline-block' : 'none';
+            }
+
+            const notifBadge = document.getElementById('top-notif-badge');
+            if (notifBadge) {
+                notifBadge.innerText = activeCount;
+                notifBadge.style.display = activeCount > 0 ? 'inline-block' : 'none';
+            }
+
+            const previewCount = document.getElementById('preview-rec-count');
+            if (previewCount) previewCount.innerText = activeCount;
+
+            // 3. Update Dashboard Overview Preview List
+            updateDashboardRecPreview(allRecommendations);
+
+            // 4. Render Main Recommendations Grid with Active Filters
+            applyRecFilters();
+        } else {
+            console.error('Error fetching recommendations:', data.error);
+        }
+    } catch (err) {
+        console.error('Network error loading recommendations:', err);
+    } finally {
+        if (isManualRefresh && refreshIcon) {
+            setTimeout(() => {
+                refreshIcon.classList.remove('fa-spin');
+                if (refreshBtn) refreshBtn.disabled = false;
+            }, 400);
+        }
+    }
+}
+
+function updateDashboardRecPreview(recs) {
+    const list = document.getElementById('dashboardRecPreviewList');
+    if (!list) return;
+
+    const activeRecs = recs.filter(r => r.status !== 'implemented').slice(0, 3);
+    if (activeRecs.length === 0) {
+        list.innerHTML = `
+            <div style="text-align: center; padding: 20px; color: var(--text-muted); font-size: 0.85rem;">
+                <i class="fa-solid fa-circle-check" style="color: var(--success); font-size: 1.4rem; margin-bottom: 6px;"></i>
+                <p style="margin: 0;">All campus efficiency recommendations implemented!</p>
+            </div>
+        `;
+        return;
+    }
+
+    list.innerHTML = activeRecs.map(r => {
+        let iconClass = 'fa-solid fa-lightbulb';
+        let iconColor = 'var(--warning)';
+
+        if (r.category === 'HVAC & Chiller') {
+            iconClass = 'fa-solid fa-temperature-arrow-down';
+            iconColor = '#f97316';
+        } else if (r.category === 'Peak Load Shifting') {
+            iconClass = 'fa-solid fa-bolt-lightning';
+            iconColor = '#ef4444';
+        } else if (r.category === 'Rooftop Solar PV') {
+            iconClass = 'fa-solid fa-solar-panel';
+            iconColor = '#10b981';
+        } else if (r.category === 'Ghost Load Elimination') {
+            iconClass = 'fa-solid fa-power-off';
+            iconColor = '#6366f1';
+        } else if (r.category === 'BEE Energy Star') {
+            iconClass = 'fa-solid fa-award';
+            iconColor = '#f59e0b';
+        }
+
+        return `
+            <div class="rec-item" style="cursor: pointer;" onclick="switchView('recommendations')">
+                <i class="${iconClass}" style="color: ${iconColor}; font-size: 1.25rem;"></i>
+                <div style="flex: 1;">
+                    <div style="display: flex; justify-content: space-between; align-items: baseline;">
+                        <strong style="font-size: 0.9rem;">${r.title}</strong>
+                        <span style="font-size: 0.75rem; color: var(--text-muted);">${r.building_code || ''}</span>
+                    </div>
+                    <p style="margin: 3px 0 0; font-size: 0.8rem; color: var(--text-muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">
+                        ${r.message}
+                    </p>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function applyRecFilters() {
+    const container = document.getElementById('recommendationsContainer');
+    if (!container) return;
+
+    const statusVal = (document.getElementById('recFilterStatus')?.value || 'active').toLowerCase();
+    const priorityVal = (document.getElementById('recFilterPriority')?.value || 'all').toLowerCase();
+    const categoryVal = document.getElementById('recFilterCategory')?.value || 'all';
+    const buildingVal = document.getElementById('recFilterBuilding')?.value || 'all';
+    const query = (document.getElementById('recSearchQuery')?.value || '').trim().toLowerCase();
+
+    const filtered = allRecommendations.filter(r => {
+        // Status filter
+        if (statusVal === 'active' && r.status === 'implemented') return false;
+        if (statusVal !== 'all' && statusVal !== 'active' && r.status !== statusVal) return false;
+
+        // Priority filter
+        if (priorityVal !== 'all' && (r.priority || '').toLowerCase() !== priorityVal) return false;
+
+        // Category filter
+        if (categoryVal !== 'all' && r.category !== categoryVal) return false;
+
+        // Building filter
+        if (buildingVal !== 'all' && String(r.building_id) !== String(buildingVal)) return false;
+
+        // Search query
+        if (query) {
+            const haystack = `${r.title} ${r.message} ${r.building_name} ${r.category} ${r.priority}`.toLowerCase();
+            if (!haystack.includes(query)) return false;
+        }
+
+        return true;
+    });
+
+    if (filtered.length === 0) {
+        container.innerHTML = `
+            <div class="panel-card" style="text-align: center; padding: 48px 24px;">
+                <i class="fa-solid fa-clipboard-check" style="font-size: 2.5rem; color: var(--text-muted); margin-bottom: 12px;"></i>
+                <h3 style="font-size: 1.15rem; margin-bottom: 6px;">No Recommendations Matching Filters</h3>
+                <p style="color: var(--text-muted); font-size: 0.88rem; max-width: 420px; margin: 0 auto 16px;">
+                    Try selecting "All Statuses" or clearing your filter criteria to inspect historical and implemented conservation actions.
+                </p>
+                <button class="btn btn-secondary btn-sm" onclick="resetRecFilters()">
+                    <i class="fa-solid fa-arrow-rotate-left"></i> Reset All Filters
+                </button>
+            </div>
+        `;
+        return;
+    }
+
+    container.innerHTML = filtered.map(rec => {
+        const prio = (rec.priority || 'medium').toLowerCase();
+        const stat = (rec.status || 'new').toLowerCase();
+        const isImplemented = (stat === 'implemented');
+
+        let prioIcon = 'fa-solid fa-circle-info';
+        if (prio === 'critical') prioIcon = 'fa-solid fa-circle-exclamation';
+        else if (prio === 'high') prioIcon = 'fa-solid fa-triangle-exclamation';
+        else if (prio === 'opportunity') prioIcon = 'fa-solid fa-sun';
+
+        let categoryIcon = 'fa-solid fa-tag';
+        if (rec.category === 'HVAC & Chiller') categoryIcon = 'fa-solid fa-temperature-arrow-down';
+        else if (rec.category === 'Peak Load Shifting') categoryIcon = 'fa-solid fa-bolt-lightning';
+        else if (rec.category === 'Rooftop Solar PV') categoryIcon = 'fa-solid fa-solar-panel';
+        else if (rec.category === 'Ghost Load Elimination') categoryIcon = 'fa-solid fa-moon';
+        else if (rec.category === 'BEE Energy Star') categoryIcon = 'fa-solid fa-award';
+        else if (rec.category === 'Academic Calendar') categoryIcon = 'fa-solid fa-graduation-cap';
+
+        // Approximate savings % based on estimated kWh relative to typical 25k kWh/mo
+        const estPct = Math.min(35, Math.max(10, Math.round((rec.estimated_savings_kwh / 25000) * 100 / 5) * 5));
+
+        return `
+            <div class="rec-item-card priority-${prio} ${isImplemented ? 'status-implemented-card' : ''}" id="rec-card-${rec.recommendation_id}">
+                <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 8px; margin-bottom: 12px;">
+                    <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center;">
+                        <span class="rec-badge-pill priority-${prio}">
+                            <i class="${prioIcon}"></i> ${prio.toUpperCase()}
+                        </span>
+                        <span class="rec-badge-pill category-pill">
+                            <i class="${categoryIcon}"></i> ${rec.category}
+                        </span>
+                        <span class="rec-badge-pill facility-pill">
+                            <i class="fa-solid fa-building"></i> ${rec.building_name} (${rec.building_code})
+                        </span>
+                    </div>
+
+                    <div>
+                        <span class="rec-badge-pill status-pill status-${stat}">
+                            ${stat === 'implemented' ? '<i class="fa-solid fa-circle-check"></i> Implemented' : (stat === 'in_progress' ? '<i class="fa-solid fa-spinner fa-spin"></i> In Progress' : '<i class="fa-solid fa-clock"></i> New Action')}
+                        </span>
+                    </div>
+                </div>
+
+                <h3 style="font-size: 1.15rem; font-weight: 700; margin-bottom: 8px; color: var(--text);">
+                    ${rec.title}
+                </h3>
+                <p style="font-size: 0.92rem; color: var(--text-muted); line-height: 1.5; margin: 0 0 16px 0;">
+                    ${rec.message}
+                </p>
+
+                <div class="rec-stat-strip">
+                    <div class="rec-stat-box">
+                        <span class="rec-stat-title"><i class="fa-solid fa-bolt" style="color: var(--warning);"></i> Est. Energy Saved</span>
+                        <span class="rec-stat-value" style="color: var(--warning);">${(rec.estimated_savings_kwh || 0).toLocaleString()} kWh</span>
+                    </div>
+                    <div class="rec-stat-box">
+                        <span class="rec-stat-title"><i class="fa-solid fa-indian-rupee-sign" style="color: var(--success);"></i> Financial Impact</span>
+                        <span class="rec-stat-value" style="color: var(--success);">₹${(rec.estimated_cost_savings_inr || 0).toLocaleString()}/mo</span>
+                    </div>
+                    <div class="rec-stat-box">
+                        <span class="rec-stat-title"><i class="fa-solid fa-leaf" style="color: var(--purple);"></i> CO₂ Reduction</span>
+                        <span class="rec-stat-value" style="color: var(--purple);">${(rec.estimated_co2_kg || 0).toLocaleString()} kg</span>
+                    </div>
+                </div>
+
+                <div class="rec-actions-bar">
+                    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                        ${stat === 'new' ? `
+                            <button class="btn btn-secondary btn-sm" onclick="updateRecStatus(${rec.recommendation_id}, 'in_progress')">
+                                <i class="fa-solid fa-spinner"></i> Start Action
+                            </button>
+                            <button class="btn btn-primary btn-sm" onclick="updateRecStatus(${rec.recommendation_id}, 'implemented')">
+                                <i class="fa-solid fa-circle-check"></i> Mark Implemented
+                            </button>
+                        ` : ''}
+
+                        ${stat === 'in_progress' ? `
+                            <button class="btn btn-primary btn-sm" onclick="updateRecStatus(${rec.recommendation_id}, 'implemented')" style="background: var(--success); border-color: var(--success);">
+                                <i class="fa-solid fa-circle-check"></i> Complete Action
+                            </button>
+                            <button class="btn btn-secondary btn-sm" onclick="updateRecStatus(${rec.recommendation_id}, 'new')">
+                                <i class="fa-solid fa-rotate-left"></i> Reset to New
+                            </button>
+                        ` : ''}
+
+                        ${stat === 'implemented' ? `
+                            <button class="btn btn-secondary btn-sm" onclick="updateRecStatus(${rec.recommendation_id}, 'new')">
+                                <i class="fa-solid fa-rotate-left"></i> Reopen Action
+                            </button>
+                        ` : ''}
+                    </div>
+
+                    <div>
+                        <button class="btn btn-secondary btn-sm" onclick="simulateRecommendation(${rec.building_id}, ${estPct})" title="Test this reduction in the What-If Simulator">
+                            <i class="fa-solid fa-sliders" style="color: var(--primary);"></i> Simulate in What-If Tool
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function resetRecFilters() {
+    const elStatus = document.getElementById('recFilterStatus');
+    const elPrio = document.getElementById('recFilterPriority');
+    const elCat = document.getElementById('recFilterCategory');
+    const elBld = document.getElementById('recFilterBuilding');
+    const elQuery = document.getElementById('recSearchQuery');
+
+    if (elStatus) elStatus.value = 'all';
+    if (elPrio) elPrio.value = 'all';
+    if (elCat) elCat.value = 'all';
+    if (elBld) elBld.value = 'all';
+    if (elQuery) elQuery.value = '';
+
+    applyRecFilters();
+}
+
+async function updateRecStatus(recId, newStatus) {
+    try {
+        const res = await fetch('/api/recommendations/update-status', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ recommendation_id: recId, status: newStatus })
+        });
+        const data = await res.json();
+
+        if (data.success) {
+            // Re-fetch recommendations to refresh KPI summary and persist
+            await loadRecommendations(false);
+        } else {
+            alert('Failed to update recommendation status: ' + (data.error || 'Server error'));
+        }
+    } catch (err) {
+        alert('Network error updating status: ' + err.message);
+    }
+}
+
+function simulateRecommendation(buildingId, savingsPct = 15) {
+    switchView('predictions');
+    const simBld = document.getElementById('sim-building');
+    const simRed = document.getElementById('sim-reduction');
+    const simPctVal = document.getElementById('sim-pct-val');
+
+    if (simBld && buildingId) {
+        simBld.value = String(buildingId);
+    }
+    if (simRed && savingsPct) {
+        const clamped = Math.max(5, Math.min(40, Math.round(savingsPct / 5) * 5));
+        simRed.value = String(clamped);
+        if (simPctVal) simPctVal.innerText = clamped + '%';
+    }
+
+    if (typeof runSimulation === 'function') {
+        runSimulation();
+    }
+
+    setTimeout(() => {
+        const simBox = document.querySelector('.sim-result-box') || document.getElementById('sim-cost-save');
+        if (simBox) {
+            simBox.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            simBox.classList.add('pulse-highlight');
+            setTimeout(() => simBox.classList.remove('pulse-highlight'), 2200);
+        }
+    }, 250);
+}
+
+// Modal: Propose Custom Action
+function openAddRecModal() {
+    const modal = document.getElementById('addRecModal');
+    if (modal) modal.style.display = 'flex';
+}
+
+function closeAddRecModal() {
+    const modal = document.getElementById('addRecModal');
+    if (modal) modal.style.display = 'none';
+}
+
+async function submitCustomRec(event) {
+    event.preventDefault();
+    const btn = document.getElementById('btnSubmitRec');
+    const origHtml = btn ? btn.innerHTML : 'Dispatch Action';
+
+    const payload = {
+        building_id: parseInt(document.getElementById('modal-rec-building').value),
+        title: document.getElementById('modal-rec-title').value.trim(),
+        category: document.getElementById('modal-rec-category').value,
+        priority: document.getElementById('modal-rec-priority').value,
+        estimated_savings_kwh: parseFloat(document.getElementById('modal-rec-savings-kwh').value),
+        message: document.getElementById('modal-rec-message').value.trim()
+    };
+
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Dispatching...';
+    }
+
+    try {
+        const res = await fetch('/api/recommendations/add', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+
+        if (data.success) {
+            closeAddRecModal();
+            document.getElementById('addRecForm').reset();
+            await loadRecommendations(true);
+        } else {
+            alert('Failed to dispatch action: ' + (data.error || 'Unknown error'));
+        }
+    } catch (err) {
+        alert('Error dispatching action: ' + err.message);
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = origHtml;
+        }
     }
 }

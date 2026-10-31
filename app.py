@@ -155,8 +155,14 @@ def init_db():
             CREATE TABLE IF NOT EXISTS recommendations (
                 recommendation_id INTEGER PRIMARY KEY AUTOINCREMENT,
                 building_id INTEGER NOT NULL,
+                title TEXT DEFAULT '',
+                category TEXT DEFAULT 'General',
+                priority TEXT DEFAULT 'medium',
+                action_type TEXT DEFAULT 'general',
                 message TEXT NOT NULL,
-                estimated_savings_kwh REAL,
+                estimated_savings_kwh REAL DEFAULT 0,
+                estimated_cost_savings_inr REAL DEFAULT 0,
+                estimated_co2_kg REAL DEFAULT 0,
                 status TEXT DEFAULT 'new' CHECK(status IN ('new','reviewed','in_progress','implemented')),
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (building_id) REFERENCES buildings(building_id)
@@ -229,8 +235,14 @@ def init_db():
             CREATE TABLE IF NOT EXISTS recommendations (
                 recommendation_id INT AUTO_INCREMENT PRIMARY KEY,
                 building_id INT NOT NULL,
+                title VARCHAR(150) DEFAULT '',
+                category VARCHAR(60) DEFAULT 'General',
+                priority VARCHAR(30) DEFAULT 'medium',
+                action_type VARCHAR(60) DEFAULT 'general',
                 message VARCHAR(500) NOT NULL,
-                estimated_savings_kwh FLOAT,
+                estimated_savings_kwh FLOAT DEFAULT 0,
+                estimated_cost_savings_inr FLOAT DEFAULT 0,
+                estimated_co2_kg FLOAT DEFAULT 0,
                 status ENUM('new','reviewed','in_progress','implemented') DEFAULT 'new',
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (building_id) REFERENCES buildings(building_id) ON DELETE CASCADE
@@ -329,6 +341,39 @@ def init_db():
         conn.commit()
     except Exception as e:
         print(f"[User Schema Migration Warning] {e}")
+
+    # Ensure recommendations table columns exist
+    try:
+        if db_type == "sqlite":
+            cursor.execute("PRAGMA table_info(recommendations)")
+            r_cols = [col[1] for col in cursor.fetchall()]
+            for c_name, c_type in [
+                ("title", "TEXT DEFAULT ''"),
+                ("category", "TEXT DEFAULT 'General'"),
+                ("priority", "TEXT DEFAULT 'medium'"),
+                ("action_type", "TEXT DEFAULT 'general'"),
+                ("estimated_cost_savings_inr", "REAL DEFAULT 0"),
+                ("estimated_co2_kg", "REAL DEFAULT 0")
+            ]:
+                if c_name not in r_cols:
+                    cursor.execute(f"ALTER TABLE recommendations ADD COLUMN {c_name} {c_type}")
+            conn.commit()
+        else:
+            for c_name, c_type in [
+                ("title", "VARCHAR(150) DEFAULT ''"),
+                ("category", "VARCHAR(60) DEFAULT 'General'"),
+                ("priority", "VARCHAR(30) DEFAULT 'medium'"),
+                ("action_type", "VARCHAR(60) DEFAULT 'general'"),
+                ("estimated_cost_savings_inr", "FLOAT DEFAULT 0"),
+                ("estimated_co2_kg", "FLOAT DEFAULT 0")
+            ]:
+                try:
+                    cursor.execute(f"ALTER TABLE recommendations ADD COLUMN {c_name} {c_type}")
+                except Exception:
+                    pass
+            conn.commit()
+    except Exception as e:
+        print(f"[Recs Schema Migration Warning] {e}")
 
     conn.close()
 
@@ -1285,6 +1330,321 @@ def simulate_savings():
         })
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 400
+
+# --- Dynamic Real-Time Recommendations Engine ---
+@app.route('/api/recommendations', methods=['GET'])
+def get_dynamic_recommendations():
+    try:
+        tariff_rate, co2_factor = get_current_tariff()
+        now = datetime.datetime.now()
+        current_hour = now.hour
+        is_weekend = (now.weekday() >= 5)
+
+        # 1. Fetch current ambient temperature & humidity
+        try:
+            url = "https://api.open-meteo.com/v1/forecast?latitude=11.0168&longitude=76.9558&current=temperature_2m,relative_humidity_2m"
+            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(req, timeout=2) as response:
+                res_data = json.loads(response.read().decode('utf-8'))
+                temp_c = round(float(res_data['current']['temperature_2m']), 1)
+        except Exception:
+            temp_c = round(26.0 + 7.5 * np.sin((current_hour - 8) * np.pi / 12), 1)
+
+        # 2. Check Academic Calendar Status
+        cal_status = ACADEMIC_CALENDAR.get('status_code', 0)
+        cal_name = ACADEMIC_CALENDAR.get('status', 'Regular Term')
+        if cal_name != 'Regular Term' and cal_status == 0:
+            cal_status = 1 if 'Exam' in cal_name else 2
+
+        # 3. Formulate Dynamic Real-Time Realistic Candidates
+        candidates = []
+
+        # A. Live Weather & HVAC Setpoint Advisory
+        if temp_c >= 27.5:
+            prio = 'critical' if temp_c >= 31.5 else 'high'
+            sav_kwh = round(160.0 * (temp_c - 24.0) * 12.0, 1)
+            sav_kwh = max(2400.0, sav_kwh)
+            sav_cost = round(sav_kwh * tariff_rate, 2)
+            sav_co2 = round(sav_kwh * co2_factor, 1)
+            candidates.append({
+                'building_id': 1,
+                'title': f'HVAC Chiller Setpoint Optimization ({temp_c}°C Ambient Heat)',
+                'category': 'HVAC & Chiller',
+                'priority': prio,
+                'action_type': 'hvac_setpoint',
+                'message': f"Ambient campus heat has reached {temp_c}°C! Raising central HVAC chiller setpoints from 20°C to 24°C in Academic Block A curtails compressor over-cycling and reduces chiller power draw by ~15%.",
+                'estimated_savings_kwh': sav_kwh,
+                'estimated_cost_savings_inr': sav_cost,
+                'estimated_co2_kg': sav_co2
+            })
+
+        # B. Midday Peak Load Shifting Window (11:00 - 17:00)
+        if 11 <= current_hour <= 17:
+            sav_kwh = 3800.0
+            sav_cost = round(sav_kwh * tariff_rate + 12500.0, 2)
+            sav_co2 = round(sav_kwh * co2_factor, 1)
+            candidates.append({
+                'building_id': 5,
+                'title': f'Active Peak Grid Load Shifting ({current_hour:02d}:00 Operational Window)',
+                'category': 'Peak Load Shifting',
+                'priority': 'critical',
+                'action_type': 'load_stagger',
+                'message': f"Campus instantaneous demand is approaching peak threshold during the {current_hour:02d}:00 daytime window. Stagger heavy autoclave sterilization in Research Lab by 45 minutes to shave ~65 kW peak demand surcharge.",
+                'estimated_savings_kwh': sav_kwh,
+                'estimated_cost_savings_inr': sav_cost,
+                'estimated_co2_kg': sav_co2
+            })
+
+        # C. Rooftop Solar PV Self-Consumption Opportunity (10:00 - 14:00)
+        if 10 <= current_hour <= 14:
+            sav_kwh = 4200.0
+            sav_cost = round(sav_kwh * tariff_rate, 2)
+            sav_co2 = round(sav_kwh * co2_factor, 1)
+            candidates.append({
+                'building_id': 6,
+                'title': 'Rooftop Solar Peak Energy Maximization Window',
+                'category': 'Rooftop Solar PV',
+                'priority': 'opportunity',
+                'action_type': 'solar_utilize',
+                'message': f"Campus 150 kWp solar PV array is generating at peak irradiance capacity (>110 kW). Schedule campus water pumping to overhead reservoirs and EV shuttle charging now to achieve 100% self-consumption.",
+                'estimated_savings_kwh': sav_kwh,
+                'estimated_cost_savings_inr': sav_cost,
+                'estimated_co2_kg': sav_co2
+            })
+
+        # D. Off-Peak Night Ghost Load Elimination (21:00 - 06:00 or Weekend)
+        if current_hour >= 21 or current_hour <= 6 or is_weekend:
+            sav_kwh = 2900.0
+            sav_cost = round(sav_kwh * tariff_rate, 2)
+            sav_co2 = round(sav_kwh * co2_factor, 1)
+            candidates.append({
+                'building_id': 2,
+                'title': 'Automated Night Sleep Policies for Computer Labs',
+                'category': 'Ghost Load Elimination',
+                'priority': 'high',
+                'action_type': 'sleep_schedule',
+                'message': f"Campus is in off-peak night/weekend hours ({current_hour:02d}:00). Over 450 desktop terminals and lab peripherals in Academic Block B are idling on standby power. Enforce automated night power-down policies.",
+                'estimated_savings_kwh': sav_kwh,
+                'estimated_cost_savings_inr': sav_cost,
+                'estimated_co2_kg': sav_co2
+            })
+
+        # E. Academic Calendar Period Turndown
+        if cal_status in (1, 2):
+            sav_kwh = 5100.0
+            sav_cost = round(sav_kwh * tariff_rate, 2)
+            sav_co2 = round(sav_kwh * co2_factor, 1)
+            candidates.append({
+                'building_id': 3,
+                'title': 'Academic Calendar Vacation Term Chiller Turndown (-40%)',
+                'category': 'Academic Calendar',
+                'priority': 'high',
+                'action_type': 'calendar_turndown',
+                'message': "Academic calendar detects break/vacation period. Lower base benchmark power consumption by 40% across Central Library and consolidate study halls to Ground Floor.",
+                'estimated_savings_kwh': sav_kwh,
+                'estimated_cost_savings_inr': sav_cost,
+                'estimated_co2_kg': sav_co2
+            })
+
+        # F. BEE Energy Star EUI Diagnostics
+        # Research Lab Class E (1-Star, 5.37 EUI)
+        sav_kwh = 6200.0
+        sav_cost = round(sav_kwh * tariff_rate, 2)
+        sav_co2 = round(sav_kwh * co2_factor, 1)
+        candidates.append({
+            'building_id': 5,
+            'title': 'Fume Hood Variable Frequency Drive (VFD) Retrofit',
+            'category': 'BEE Energy Star',
+            'priority': 'critical',
+            'action_type': 'vfd_retrofit',
+            'message': "Research & Innovation Lab is operating at high energy intensity (EUI 5.37, BEE 1-Star). Exhaust hoods run continuously at 100% capacity. Installing auto-modulating VFDs will reduce fan motor draw by 35%.",
+            'estimated_savings_kwh': sav_kwh,
+            'estimated_cost_savings_inr': sav_cost,
+            'estimated_co2_kg': sav_co2
+        })
+
+        # Hostel Class D (2-Star, 4.14 EUI)
+        sav_kwh = 3400.0
+        sav_cost = round(sav_kwh * tariff_rate, 2)
+        sav_co2 = round(sav_kwh * co2_factor, 1)
+        candidates.append({
+            'building_id': 4,
+            'title': 'Hostel Smart PIR Corridor Motion-Sensor LED Retrofit',
+            'category': 'BEE Energy Star',
+            'priority': 'medium',
+            'action_type': 'led_retrofit',
+            'message': "Main Hostel Complex EUI is 4.14 kWh/sq.ft (Class D). Replace existing continuous T8 fluorescent corridor illumination with PIR motion-activated smart LED fittings across all 4 residential blocks.",
+            'estimated_savings_kwh': sav_kwh,
+            'estimated_cost_savings_inr': sav_cost,
+            'estimated_co2_kg': sav_co2
+        })
+
+        # 4. Upsert Candidates into Database (Preserving Existing User Statuses)
+        conn, db_type = get_db_connection()
+        cursor = conn.cursor()
+
+        for c in candidates:
+            q_chk = "SELECT recommendation_id, status FROM recommendations WHERE building_id = ? AND title = ?" if db_type == "sqlite" else "SELECT recommendation_id, status FROM recommendations WHERE building_id = %s AND title = %s"
+            cursor.execute(q_chk, (c['building_id'], c['title']))
+            existing = cursor.fetchone()
+            if existing:
+                q_up = """
+                    UPDATE recommendations 
+                    SET category = ?, priority = ?, action_type = ?, message = ?, estimated_savings_kwh = ?, estimated_cost_savings_inr = ?, estimated_co2_kg = ?
+                    WHERE recommendation_id = ?
+                """ if db_type == "sqlite" else """
+                    UPDATE recommendations 
+                    SET category = %s, priority = %s, action_type = %s, message = %s, estimated_savings_kwh = %s, estimated_cost_savings_inr = %s, estimated_co2_kg = %s
+                    WHERE recommendation_id = %s
+                """
+                cursor.execute(q_up, (c['category'], c['priority'], c['action_type'], c['message'], c['estimated_savings_kwh'], c['estimated_cost_savings_inr'], c['estimated_co2_kg'], existing[0]))
+            else:
+                ph = "(?,?,?,?,?,?,?,?,?,?)" if db_type == "sqlite" else "(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)"
+                cursor.execute(f"""
+                    INSERT INTO recommendations 
+                    (building_id, title, category, priority, action_type, message, estimated_savings_kwh, estimated_cost_savings_inr, estimated_co2_kg, status)
+                    VALUES {ph}
+                """, (c['building_id'], c['title'], c['category'], c['priority'], c['action_type'], c['message'], c['estimated_savings_kwh'], c['estimated_cost_savings_inr'], c['estimated_co2_kg'], 'new'))
+        conn.commit()
+
+        # 5. Fetch All Recommendations from Database joined with Buildings
+        q_fetch = """
+            SELECT r.recommendation_id, r.building_id, r.title, r.category, r.priority, r.action_type, 
+                   r.message, r.estimated_savings_kwh, r.estimated_cost_savings_inr, r.estimated_co2_kg, 
+                   r.status, r.created_at, b.building_name, b.building_code, b.area_sqft
+            FROM recommendations r
+            JOIN buildings b ON r.building_id = b.building_id
+            ORDER BY 
+                CASE r.status 
+                    WHEN 'new' THEN 1 
+                    WHEN 'in_progress' THEN 2 
+                    ELSE 3 
+                END,
+                CASE r.priority 
+                    WHEN 'critical' THEN 1 
+                    WHEN 'high' THEN 2 
+                    WHEN 'medium' THEN 3 
+                    ELSE 4 
+                END,
+                r.recommendation_id DESC
+        """
+        cursor.execute(q_fetch)
+        rows = cursor.fetchall()
+        conn.close()
+
+        recs_list = []
+        tot_active = 0
+        critical_count = 0
+        tot_kwh = 0.0
+        tot_cost = 0.0
+        tot_co2 = 0.0
+
+        for r in rows:
+            is_active = (r[10] != 'implemented')
+            kwh_val = float(r[7]) if r[7] else 0.0
+            cost_val = float(r[8]) if r[8] else round(kwh_val * tariff_rate, 2)
+            co2_val = float(r[9]) if r[9] else round(kwh_val * co2_factor, 1)
+
+            if is_active:
+                tot_active += 1
+                if r[4] == 'critical':
+                    critical_count += 1
+                tot_kwh += kwh_val
+                tot_cost += cost_val
+                tot_co2 += co2_val
+
+            recs_list.append({
+                'recommendation_id': r[0],
+                'building_id': r[1],
+                'title': r[2] or 'Energy Efficiency Recommendation',
+                'category': r[3] or 'General',
+                'priority': r[4] or 'medium',
+                'action_type': r[5] or 'general',
+                'message': r[6],
+                'estimated_savings_kwh': kwh_val,
+                'estimated_cost_savings_inr': cost_val,
+                'estimated_co2_kg': co2_val,
+                'status': r[10] or 'new',
+                'created_at': str(r[11]) if r[11] else str(now.strftime('%Y-%m-%d')),
+                'building_name': r[12],
+                'building_code': r[13],
+                'area_sqft': int(r[14]) if r[14] else 25000
+            })
+
+        summary = {
+            'active_count': tot_active,
+            'critical_count': critical_count,
+            'total_savings_kwh': round(tot_kwh, 1),
+            'total_savings_inr': round(tot_cost, 2),
+            'total_co2_kg': round(tot_co2, 1),
+            'current_temp_c': temp_c,
+            'current_hour': current_hour,
+            'is_weekend': is_weekend,
+            'cal_status': cal_status
+        }
+
+        return jsonify({'success': True, 'recommendations': recs_list, 'summary': summary})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/recommendations/update-status', methods=['POST'])
+def update_recommendation_status():
+    data = request.get_json() or {}
+    rec_id = data.get('recommendation_id')
+    status = data.get('status', 'new').strip().lower()
+
+    if status not in ('new', 'in_progress', 'implemented', 'reviewed'):
+        return jsonify({'success': False, 'error': 'Invalid status'}), 400
+
+    try:
+        conn, db_type = get_db_connection()
+        cursor = conn.cursor()
+        q = "UPDATE recommendations SET status = ? WHERE recommendation_id = ?" if db_type == "sqlite" else "UPDATE recommendations SET status = %s WHERE recommendation_id = %s"
+        cursor.execute(q, (status, rec_id))
+        conn.commit()
+
+        cursor.execute("SELECT COUNT(*) FROM recommendations WHERE status != 'implemented'")
+        remaining_active = cursor.fetchone()[0]
+        conn.close()
+
+        return jsonify({'success': True, 'message': f'Recommendation status updated to {status.replace("_", " ")}', 'active_count': remaining_active})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/recommendations/add', methods=['POST'])
+def add_custom_recommendation():
+    if 'user' not in session or session['user'].get('role') != 'Admin':
+        return jsonify({'success': False, 'error': 'Admin required'}), 403
+
+    data = request.get_json() or {}
+    building_id = int(data.get('building_id', 1))
+    title = data.get('title', '').strip()
+    category = data.get('category', 'General').strip()
+    priority = data.get('priority', 'medium').strip().lower()
+    message = data.get('message', '').strip()
+    savings_kwh = float(data.get('estimated_savings_kwh', 1000.0))
+
+    if not title or not message:
+        return jsonify({'success': False, 'error': 'Title and Message are required'}), 400
+
+    tariff_rate, co2_factor = get_current_tariff()
+    savings_inr = round(savings_kwh * tariff_rate, 2)
+    savings_co2 = round(savings_kwh * co2_factor, 1)
+
+    try:
+        conn, db_type = get_db_connection()
+        cursor = conn.cursor()
+        ph = "(?,?,?,?,?,?,?,?,?,?)" if db_type == "sqlite" else "(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)"
+        cursor.execute(f"""
+            INSERT INTO recommendations 
+            (building_id, title, category, priority, action_type, message, estimated_savings_kwh, estimated_cost_savings_inr, estimated_co2_kg, status)
+            VALUES {ph}
+        """, (building_id, title, category, priority, 'custom', message, savings_kwh, savings_inr, savings_co2, 'new'))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True, 'message': 'Custom recommendation added successfully!'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/report-data')
 def report_data():
